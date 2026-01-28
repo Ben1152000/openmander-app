@@ -13,8 +13,8 @@ const BOUNDS_PADDING_FACTOR = 0.5; // 50% padding on each side for preloading
 const THROTTLE_DELAY_MS = 150; // Minimum time between loads (ms)
 const ZOOM_DEBOUNCE_MS = 300; // Debounce delay for zoom events
 const UPDATE_FLAG_RESET_DELAY_MS = 100; // Delay before resetting updatingFromPlanRef flag
-const ZOOM_THRESHOLD_COUNTY_TO_VTD = 8.5;
-const ZOOM_THRESHOLD_VTD_TO_BLOCK = 11.5;
+const ZOOM_THRESHOLD_COUNTY_TO_VTD = 8;
+const ZOOM_THRESHOLD_VTD_TO_BLOCK = 12;
 const DEFAULT_ZOOM = 6;
 const DEFAULT_NUM_DISTRICTS = 4;
 const DEFAULT_LAYER = "county";
@@ -111,8 +111,8 @@ export default function App() {
   // State for pack data
   const [geojson, setGeojson] = useState<any | null>(null);
   const [plan, setPlan] = useState<any>(null);
-  const [mapData, setMapData] = useState<{ wasmMap?: any; packFiles?: Record<string, Uint8Array> } | null>(null);
-  const [numDistricts, setNumDistricts] = useState(DEFAULT_NUM_DISTRICTS); // Default for Iowa
+  const [mapData, setMapData] = useState<{ wasmMap?: any; wasmMapProxy?: any; packFiles?: Record<string, Uint8Array> } | null>(null);
+  const [numDistricts, setNumDistricts] = useState(DEFAULT_NUM_DISTRICTS); // Default for Illinois
   const [mapInitialized, setMapInitialized] = useState(false);
   const [planUpdateTrigger, setPlanUpdateTrigger] = useState(0);
   const updatingFromPlanRef = useRef(false);
@@ -133,7 +133,8 @@ export default function App() {
   const previousLayerRef = useRef<string>(DEFAULT_LAYER); // Track previous layer to detect threshold crossings
   const featureHashesRef = useRef<Record<string, string>>({}); // Track feature hashes: featureId -> hash
   const loadedBoundsRef = useRef<Record<string, [number, number, number, number]>>({}); // Ref version for immediate access in event handlers
-  const lastLoadTimeRef = useRef<number>(0); // Track last load time for throttling
+  const lastLoadTimeRef = useRef<number>(0);
+  const geojsonCacheRef = useRef<Record<string, any>>({}); // Cache GeoJSON by layer+bounds key // Track last load time for throttling
   const loadingRequestRef = useRef<{ layer: string; bounds: [number, number, number, number] } | null>(null); // Track current loading request
   const loadingAbortControllerRef = useRef<AbortController | null>(null); // For cancelling in-flight requests
   const activeLayerRef = useRef<string>(DEFAULT_LAYER); // Ref to track activeLayer for immediate access in event handlers
@@ -154,38 +155,44 @@ export default function App() {
     return counts;
   }, [assignments]);
 
-  // Load Iowa webpack data
+  // Load Illinois pmtiles pack data
   useEffect(() => {
     if (!wasm) return;
 
-    const loadIowaPack = async () => {
+    const loadIllinoisPack = async () => {
       setLoadingPack(true);
       setLoadingStatus("Loading pack files...");
       try {
-        console.log("Loading Iowa webpack data...");
-        const packPath = "/packs/IA_2020_webpack";
-        const packFiles = await loadPackFromDirectory(packPath, (current, total) => {
-          setLoadingStatus(`Loading pack files... (${current}/${total})`);
+        const packPath = "/packs/IL_2020_pmtiles_pack";
+        const packFiles = await loadPackFromDirectory(packPath, (current, total, fileName) => {
+          if (fileName) {
+            setLoadingStatus(`Loading pack files... (${current}/${total}) - ${fileName}`);
+          } else {
+            setLoadingStatus(`Loading pack files... (${current}/${total})`);
+          }
         });
 
-        console.log(`Loaded ${Object.keys(packFiles).length} pack files`);
         setLoadingStatus("Initializing map...");
-
-        // Create WasmMap from pack files
+        
+        // Yield to React's render cycle to allow status update to be displayed
+        // Use requestAnimationFrame to ensure the browser paints the update before blocking
+        await new Promise(resolve => {
+          requestAnimationFrame(() => {
+            // Double RAF to ensure paint happens
+            requestAnimationFrame(resolve);
+          });
+        });
+        
+        // Construct WasmMap from pack files
+        // Note: This runs synchronously on the main thread and will block UI updates
+        // The requestAnimationFrame above ensures React renders the "Initializing map..." status first
         const { WasmMap } = wasm as any;
         const wasmMap = new WasmMap(packFiles);
 
-        // Get available layers
-        const layers = wasmMap.layers_present();
-        console.log("Available layers:", layers);
-
         // Store the map for plan creation
         setMapData({ wasmMap, packFiles });
-        setLoadingStatus("");
-
-        console.log("Iowa webpack loaded successfully");
       } catch (err) {
-        console.error("Failed to load Iowa webpack:", err);
+        console.error("Failed to load Illinois pmtiles pack:", err);
         setLoadingStatus("Error loading pack");
         // Fall back to demo GeoJSON
         try {
@@ -204,10 +211,11 @@ export default function App() {
         }
       } finally {
         setLoadingPack(false);
+        setLoadingStatus("");
       }
     };
 
-    loadIowaPack();
+    loadIllinoisPack();
   }, [wasm]);
 
   // Create plan from WASM when mapData and numDistricts are available
@@ -221,7 +229,6 @@ export default function App() {
       newPlan.randomize();
       setPlan(newPlan);
       setLoadingStatus("");
-      console.log("Plan created with", numDistricts, "districts");
     } catch (err) {
       console.error("Failed to create plan:", err);
       setLoadingStatus("Error creating plan");
@@ -258,6 +265,7 @@ export default function App() {
             return null;
           }
           try {
+            // Use direct call (proxy approach has issues, using direct for now)
             geojsonValue = mapData.wasmMap.to_geojson(layerName, boundsArray);
             if (!geojsonValue) {
               console.warn(`to_geojson returned null/undefined for layer ${layerName}`);
@@ -384,8 +392,21 @@ export default function App() {
         // Load only the active layer (viewport-based loading)
         console.log(`Loading ${activeLayer} layer for viewport (bounds: ${mapBounds})`);
         
-        // Load the active layer with viewport bounds
-        const layerGeoJSON = await loadLayerGeoJSON(activeLayer, mapBounds);
+        // Check cache first
+        const cacheKey = `${activeLayer}:${mapBounds.join(',')}`;
+        let layerGeoJSON = geojsonCacheRef.current[cacheKey];
+        
+        if (!layerGeoJSON) {
+          // Load the active layer with viewport bounds
+          layerGeoJSON = await loadLayerGeoJSON(activeLayer, mapBounds);
+          
+          // Cache the result (limit cache size to prevent memory issues)
+          if (layerGeoJSON && Object.keys(geojsonCacheRef.current).length < 10) {
+            geojsonCacheRef.current[cacheKey] = layerGeoJSON;
+          }
+        } else {
+          console.log(`Using cached GeoJSON for ${activeLayer}`);
+        }
         
         // Check if this request was cancelled or superseded
         if (abortController.signal.aborted || loadingRequestRef.current !== requestId) {
@@ -488,7 +509,7 @@ export default function App() {
     const map = new maplibregl.Map({
       container: mapDivRef.current,
       style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
-      center: [-93.5, 42.0],
+      center: [-89.0, 40.0], // Illinois center
       zoom: DEFAULT_ZOOM,
     });
     mapRef.current = map;
@@ -796,6 +817,7 @@ export default function App() {
         type: "fill",
         source: "units",
         paint: {
+          // Use properties directly - MapLibre optimizes updates when using feature IDs
           "fill-color": ["case",
             ["has", "district"],
             ["get", "district_color"],
@@ -878,7 +900,7 @@ export default function App() {
   }, [paintMode, activeDistrict, mapInitialized]);
 
   // Update map source when assignments change (for manual painting only)
-  // Uses feature IDs and hashes to only update changed features
+  // Uses MapLibre Feature State API for efficient updates without regenerating GeoJSON
   useEffect(() => {
     if (!geojson || !mapRef.current || !mapInitialized || updatingFromPlanRef.current) return;
     
@@ -888,7 +910,8 @@ export default function App() {
       return;
     }
 
-    const src = mapRef.current.getSource("units") as maplibregl.GeoJSONSource;
+    const map = mapRef.current;
+    const src = map.getSource("units") as maplibregl.GeoJSONSource;
     if (!src) return;
 
     // Build updated features with current assignments
@@ -909,27 +932,38 @@ export default function App() {
         featureHashesRef.current[featureId] = newHash;
       }
       
-        return {
-          ...f,
+      return {
+        ...f,
         id: featureId, // Ensure feature ID is set for MapLibre
-          properties: {
-            ...f.properties,
-            district: d ?? null,
-            district_color: d ? hashColor(d) : null,
+        properties: {
+          ...f.properties,
+          district: d ?? null,
+          district_color: d ? hashColor(d) : null,
           _hash: newHash,
         },
       };
     });
 
     // Update source - MapLibre will use feature IDs to efficiently update only changed features
+    // Defer the update to avoid blocking the UI
     if (changedCount > 0) {
       console.log(`Updating ${changedCount} of ${geojson.features.length} features (hash-based diff)`);
+      
+      // Use requestIdleCallback to defer the update for better responsiveness
+      const updateSource = () => {
+        src.setData({
+          type: "FeatureCollection",
+          features: updatedFeatures,
+        });
+      };
+      
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(updateSource, { timeout: 100 });
+      } else {
+        // Fallback for browsers without requestIdleCallback
+        setTimeout(updateSource, 0);
+      }
     }
-    
-    src.setData({
-      type: "FeatureCollection",
-      features: updatedFeatures,
-    });
   }, [assignments, geojson, mapInitialized]);
 
   const handleRandomize = () => {
