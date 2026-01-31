@@ -8,9 +8,26 @@ export default defineConfig({
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
+      // Enable caching for static assets (PMTiles, CSV, etc.)
+      'Cache-Control': 'public, max-age=31536000',
     },
   },
   optimizeDeps: {
     exclude: ['../wasm/pkg/openmander'],
+  },
+  build: {
+    // Enable compression and chunking for better performance
+    minify: 'esbuild',
+    target: 'esnext',
+    rollupOptions: {
+      output: {
+        // Split vendor chunks for better caching
+        manualChunks: {
+          'maplibre': ['maplibre-gl'],
+          'pmtiles': ['pmtiles'],
+          'react-vendor': ['react', 'react-dom'],
+        },
+      },
+    },
   },
 })

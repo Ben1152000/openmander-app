@@ -1,107 +1,35 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl, { Map } from "maplibre-gl";
 import { useWasm } from "./useWasm";
 import { loadPackFromDirectory } from "./loadPack";
+import { Protocol } from "pmtiles";
 import "./App.css";
+
+// PMTiles protocol handler - set up once using the pmtiles library
+let pmtilesProtocolSetup = false;
+
+function setupPmtilesProtocol() {
+  if (pmtilesProtocolSetup) return;
+  
+  // Use the pmtiles library's protocol handler
+  const protocol = new Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+  
+  pmtilesProtocolSetup = true;
+}
 
 type FeatureId = string; // e.g., GEOID20
 type DistrictId = number;
 
 // Constants
-const BOUNDS_MARGIN = 0.0001; // Small margin for floating point comparison
-const BOUNDS_PADDING_FACTOR = 0.5; // 50% padding on each side for preloading
-const THROTTLE_DELAY_MS = 150; // Minimum time between loads (ms)
-const ZOOM_DEBOUNCE_MS = 300; // Debounce delay for zoom events
-const UPDATE_FLAG_RESET_DELAY_MS = 100; // Delay before resetting updatingFromPlanRef flag
 const ZOOM_THRESHOLD_COUNTY_TO_VTD = 8;
 const ZOOM_THRESHOLD_VTD_TO_BLOCK = 12;
 const DEFAULT_ZOOM = 6;
 const DEFAULT_NUM_DISTRICTS = 4;
 const DEFAULT_LAYER = "county";
 
-function hashColor(d: number): string {
-  // stable, readable-ish palette without deps
-  const h = (d * 57) % 360;
-  return `hsl(${h} 70% 50%)`;
-}
+// Colors are now computed in MapLibre style expressions, not in JS
 
-// Helper functions for bounds checking
-type Bounds = [number, number, number, number]; // [min_lon, min_lat, max_lon, max_lat]
-
-/**
- * Check if viewport bounds are completely within loaded bounds
- */
-function isViewportWithinBounds(
-  viewportBounds: Bounds,
-  loadedBounds: Bounds
-): boolean {
-  const [viewportWest, viewportSouth, viewportEast, viewportNorth] = viewportBounds;
-  const [loadedWest, loadedSouth, loadedEast, loadedNorth] = loadedBounds;
-  
-  return (
-    viewportWest >= loadedWest - BOUNDS_MARGIN &&
-    viewportSouth >= loadedSouth - BOUNDS_MARGIN &&
-    viewportEast <= loadedEast + BOUNDS_MARGIN &&
-    viewportNorth <= loadedNorth + BOUNDS_MARGIN
-  );
-}
-
-/**
- * Check if viewport bounds exceed (go outside) loaded bounds
- */
-function doesViewportExceedBounds(
-  viewportBounds: Bounds,
-  loadedBounds: Bounds
-): boolean {
-  const [viewportWest, viewportSouth, viewportEast, viewportNorth] = viewportBounds;
-  const [loadedWest, loadedSouth, loadedEast, loadedNorth] = loadedBounds;
-  
-  return (
-    viewportWest < loadedWest - BOUNDS_MARGIN ||
-    viewportSouth < loadedSouth - BOUNDS_MARGIN ||
-    viewportEast > loadedEast + BOUNDS_MARGIN ||
-    viewportNorth > loadedNorth + BOUNDS_MARGIN
-  );
-}
-
-/**
- * Check if viewport bounds are outside loaded bounds (for panning detection)
- * Uses different comparison logic - checks if viewport has moved outside the padded loaded area
- */
-function isViewportOutsideLoadedArea(
-  viewportBounds: Bounds,
-  loadedBounds: Bounds
-): boolean {
-  const [viewportWest, viewportSouth, viewportEast, viewportNorth] = viewportBounds;
-  const [loadedWest, loadedSouth, loadedEast, loadedNorth] = loadedBounds;
-  
-  // Check if current viewport (not padded) has moved outside the loaded area
-  // The loaded area already includes padding, so we check if viewport is outside it
-  return (
-    viewportWest < loadedWest + BOUNDS_MARGIN ||
-    viewportSouth < loadedSouth + BOUNDS_MARGIN ||
-    viewportEast > loadedEast - BOUNDS_MARGIN ||
-    viewportNorth > loadedNorth - BOUNDS_MARGIN
-  );
-}
-
-/**
- * Check if request bounds cover the new bounds
- */
-function doesRequestCoverBounds(
-  requestBounds: Bounds,
-  newBounds: Bounds
-): boolean {
-  const [reqWest, reqSouth, reqEast, reqNorth] = requestBounds;
-  const [newWest, newSouth, newEast, newNorth] = newBounds;
-  
-  return (
-    newWest >= reqWest - BOUNDS_MARGIN &&
-    newSouth >= reqSouth - BOUNDS_MARGIN &&
-    newEast <= reqEast + BOUNDS_MARGIN &&
-    newNorth <= reqNorth + BOUNDS_MARGIN
-  );
-}
 
 export default function App() {
   const mapRef = useRef<Map | null>(null);
@@ -109,7 +37,6 @@ export default function App() {
   const { wasm, loading: wasmLoading, error: wasmError } = useWasm();
 
   // State for pack data
-  const [geojson, setGeojson] = useState<any | null>(null);
   const [plan, setPlan] = useState<any>(null);
   const [mapData, setMapData] = useState<{ wasmMap?: any; wasmMapProxy?: any; packFiles?: Record<string, Uint8Array> } | null>(null);
   const [numDistricts, setNumDistricts] = useState(DEFAULT_NUM_DISTRICTS); // Default for Illinois
@@ -119,41 +46,35 @@ export default function App() {
   
   // Loading states
   const [loadingPack, setLoadingPack] = useState(false);
-  const [loadingLayer, setLoadingLayer] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState<string>("");
   
-  // Level-of-detail: store GeoJSON for different layers
-  const [geojsonByLayer, setGeojsonByLayer] = useState<Record<string, any>>({});
+  // Level-of-detail: track current layer
   const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_ZOOM); // For display only
-  const [activeLayer, setActiveLayer] = useState<string>(DEFAULT_LAYER); // Triggers data reload when changed
+  const [activeLayer, setActiveLayer] = useState<string>(DEFAULT_LAYER); // Triggers layer switch when changed
   const [currentLayer, setCurrentLayer] = useState<string>(DEFAULT_LAYER); // For display
-  const [mapBounds, setMapBounds] = useState<[number, number, number, number] | null>(null); // [min_lon, min_lat, max_lon, max_lat]
-  const [loadedBounds, setLoadedBounds] = useState<Record<string, [number, number, number, number]>>({}); // Track loaded bounds per layer
-  const throttleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousLayerRef = useRef<string>(DEFAULT_LAYER); // Track previous layer to detect threshold crossings
   const featureHashesRef = useRef<Record<string, string>>({}); // Track feature hashes: featureId -> hash
-  const loadedBoundsRef = useRef<Record<string, [number, number, number, number]>>({}); // Ref version for immediate access in event handlers
-  const lastLoadTimeRef = useRef<number>(0);
-  const geojsonCacheRef = useRef<Record<string, any>>({}); // Cache GeoJSON by layer+bounds key // Track last load time for throttling
-  const loadingRequestRef = useRef<{ layer: string; bounds: [number, number, number, number] } | null>(null); // Track current loading request
-  const loadingAbortControllerRef = useRef<AbortController | null>(null); // For cancelling in-flight requests
   const activeLayerRef = useRef<string>(DEFAULT_LAYER); // Ref to track activeLayer for immediate access in event handlers
-  const zoomDebounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // For debouncing zoom events
+  const loadedSourcesRef = useRef<Set<string>>(new Set()); // Track which sources have been loaded
 
-  // Assignments: FeatureId -> DistrictId
-  const [assignments, setAssignments] = useState<Record<FeatureId, DistrictId>>({});
+  // Assignments: Store in ref to avoid React re-renders and object cloning overhead
+  // Only keep small UI state in React (counts per district for display)
+  // Use Record instead of Map to avoid type conflicts
+  const assignmentsRef = useRef<Record<string, number>>({});
   const [activeDistrict, setActiveDistrict] = useState<DistrictId>(1);
-  const [paintMode, setPaintMode] = useState(true);
-
-  // Metrics: simple counts per district
-  const metrics = useMemo(() => {
-    const counts: Record<number, number> = {};
-    for (const k of Object.keys(assignments)) {
-      const d = assignments[k];
-      counts[d] = (counts[d] ?? 0) + 1;
-    }
-    return counts;
-  }, [assignments]);
+  const [paintMode, setPaintMode] = useState(false);
+  
+  // Optional: Keep counts in state for UI display (lightweight, only updates when needed)
+  const [districtCounts, setDistrictCounts] = useState<Record<number, number>>({});
+  
+  // Visualization mode: "districts" or "partisan"
+  const [visualizationMode, setVisualizationMode] = useState<"districts" | "partisan">("districts");
+  
+  // Store partisan lean data (geo_id -> lean percentage, positive = Dem, negative = Rep)
+  const partisanLeanRef = useRef<Record<string, number>>({});
+  
+  // Store geo_id by index for each layer (index -> geo_id)
+  const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
 
   // Load Illinois pmtiles pack data
   useEffect(() => {
@@ -163,17 +84,17 @@ export default function App() {
       setLoadingPack(true);
       setLoadingStatus("Loading pack files...");
       try {
-        const packPath = "/packs/IL_2020_pmtiles_pack";
+        const packPath = "/packs/IL_2020_webpack";
         const packFiles = await loadPackFromDirectory(packPath, (current, total, fileName) => {
           if (fileName) {
             setLoadingStatus(`Loading pack files... (${current}/${total}) - ${fileName}`);
           } else {
-            setLoadingStatus(`Loading pack files... (${current}/${total})`);
+          setLoadingStatus(`Loading pack files... (${current}/${total})`);
           }
         });
 
         setLoadingStatus("Initializing map...");
-        
+
         // Yield to React's render cycle to allow status update to be displayed
         // Use requestAnimationFrame to ensure the browser paints the update before blocking
         await new Promise(resolve => {
@@ -194,21 +115,7 @@ export default function App() {
       } catch (err) {
         console.error("Failed to load Illinois pmtiles pack:", err);
         setLoadingStatus("Error loading pack");
-        // Fall back to demo GeoJSON
-        try {
-          const response = await fetch("/demo.geojson");
-          if (response.ok) {
-            const demoData = await response.json();
-            setGeojson(demoData);
-            setLoadingStatus("Loaded demo data");
-          } else {
-            console.error("Failed to load demo.geojson:", response.statusText);
-            setLoadingStatus("Error: Could not load pack or demo data");
-          }
-        } catch (fallbackErr) {
-          console.error("Failed to load demo.geojson", fallbackErr);
-          setLoadingStatus("Error: Could not load pack or demo data");
-        }
+        // No fallback - PMTiles are required
       } finally {
         setLoadingPack(false);
         setLoadingStatus("");
@@ -217,6 +124,195 @@ export default function App() {
 
     loadIllinoisPack();
   }, [wasm]);
+  
+  // Load partisan lean data from CSV files
+  useEffect(() => {
+    if (!mapData?.packFiles) return;
+    
+    const loadPartisanData = async () => {
+      const packFiles = mapData.packFiles; // Store reference for TypeScript
+      if (!packFiles) return; // Additional guard for TypeScript
+      
+      try {
+        const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+        const leanData: Record<string, number> = {};
+        const indexMaps: Record<string, Record<number, string>> = {};
+        
+        // Load data for each layer
+        for (const layerName of allLayers) {
+          const csvFile = packFiles[`data/${layerName}.csv`];
+          if (!csvFile) {
+            console.warn(`${layerName} CSV file not found`);
+            continue;
+          }
+          
+          // Parse CSV
+          const csvText = new TextDecoder().decode(csvFile);
+          const lines = csvText.split('\n');
+          const headers = lines[0].split(',');
+          
+          // Find column indices
+          const idxIdx = headers.indexOf('idx');
+          const geoIdIdx = headers.indexOf('geo_id');
+          const demIdx = headers.indexOf('E_20_PRES_Dem');
+          const repIdx = headers.indexOf('E_20_PRES_Rep');
+          
+          if (idxIdx === -1 || geoIdIdx === -1) {
+            console.warn(`Required columns not found in ${layerName} CSV`);
+            continue;
+          }
+          
+          const indexToGeoId: Record<number, string> = {};
+          
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            const cols = line.split(',');
+            const idx = parseInt(cols[idxIdx]);
+            const geoId = cols[geoIdIdx];
+            
+            // Store index -> geo_id mapping
+            indexToGeoId[idx] = geoId;
+            
+            // Calculate partisan lean if election data exists
+            if (demIdx !== -1 && repIdx !== -1) {
+              const dem = parseFloat(cols[demIdx]) || 0;
+              const rep = parseFloat(cols[repIdx]) || 0;
+              const total = dem + rep;
+              
+              if (total > 0) {
+                // Calculate lean: positive = Dem, negative = Rep
+                leanData[geoId] = (dem - rep) / total;
+              }
+            }
+          }
+          
+          indexMaps[layerName] = indexToGeoId;
+          console.log(`Loaded ${layerName}: ${Object.keys(indexToGeoId).length} features`);
+        }
+        
+        partisanLeanRef.current = leanData;
+        geoIdByIndexRef.current = indexMaps;
+        console.log(`Total partisan lean data: ${Object.keys(leanData).length} features`);
+      } catch (err) {
+        console.error("Failed to load partisan data:", err);
+      }
+    };
+    
+    loadPartisanData();
+  }, [mapData]);
+
+  // Update feature-state with partisan lean when visualization mode changes
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has("all")) return;
+    
+    const map = mapRef.current;
+    const sourceId = "units-all";
+    
+    if (visualizationMode === "partisan") {
+      console.log(`Partisan mode activated. Have ${Object.keys(partisanLeanRef.current).length} partisan lean values`);
+      
+      // Update feature-state for all visible features with partisan lean
+      const updatePartisanStates = () => {
+        const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+        let updatedCount = 0;
+        let totalFeatures = 0;
+        let sampleGeoIds: string[] = [];
+        
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          if (!map.getLayer(fillLayerId)) {
+            console.log(`Layer ${fillLayerId} not found`);
+            continue;
+          }
+          
+          const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+          totalFeatures += features.length;
+          
+          console.log(`Layer ${layerName}: ${features.length} features`);
+          
+          for (const feature of features) {
+            const index = feature.properties?.index;
+            if (index === undefined) {
+              console.log(`Feature missing index:`, feature.properties);
+              continue;
+            }
+            
+            // Look up geo_id from index
+            const indexMap = geoIdByIndexRef.current[layerName];
+            if (!indexMap) {
+              console.log(`No index map for layer ${layerName}`);
+              continue;
+            }
+            
+            const geoId = indexMap[parseInt(index)];
+            if (!geoId) {
+              if (updatedCount === 0) {
+                console.log(`No geo_id for index ${index} in layer ${layerName}`);
+              }
+              continue;
+            }
+            
+            if (sampleGeoIds.length < 5) {
+              sampleGeoIds.push(`${index}->${geoId}`);
+            }
+            
+            const lean = partisanLeanRef.current[geoId];
+            if (lean !== undefined) {
+              map.setFeatureState(
+                { source: sourceId, sourceLayer: layerName, id: index },
+                { partisanLean: lean }
+              );
+              updatedCount++;
+            } else if (updatedCount === 0) {
+              // Log first mismatch
+              console.log(`No lean data for geo_id: ${geoId} (index ${index})`);
+            }
+          }
+        }
+        
+        console.log(`Total features: ${totalFeatures}, Updated: ${updatedCount}`);
+        console.log(`Sample geo_ids from features:`, sampleGeoIds);
+        console.log(`Sample geo_ids from partisan data:`, Object.keys(partisanLeanRef.current).slice(0, 5));
+      };
+      
+      updatePartisanStates();
+      
+      // Update on map move/zoom
+      map.on("moveend", updatePartisanStates);
+      
+      return () => {
+        map.off("moveend", updatePartisanStates);
+      };
+    } else {
+      // Clear partisan lean feature-state when switching back to district mode
+      console.log("District mode activated. Clearing partisan lean states.");
+      
+      const clearPartisanStates = () => {
+        const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+        
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          if (!map.getLayer(fillLayerId)) continue;
+          
+          const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+          
+          for (const feature of features) {
+            const index = feature.properties?.index;
+            if (index === undefined) continue;
+            
+            map.setFeatureState(
+              { source: sourceId, sourceLayer: layerName, id: index },
+              { partisanLean: null }
+            );
+          }
+        }
+      };
+      
+      clearPartisanStates();
+    }
+  }, [visualizationMode, mapInitialized]);
 
   // Create plan from WASM when mapData and numDistricts are available
   useEffect(() => {
@@ -242,536 +338,107 @@ export default function App() {
     return "block";
   };
 
-  // Update GeoJSON from plan (with district assignments) for all layers
+  // Update assignments ref when plan changes (not in React state to avoid re-renders)
+  // This is called only on plan updates, not on every assignment change
   useEffect(() => {
-    if (!plan || !wasm) return;
+    if (!plan || activeLayer !== "block") return;
 
-    updatingFromPlanRef.current = true;
-    
-    const loadLayerGeoJSON = async (layerName: string, bounds?: [number, number, number, number] | null) => {
-      try {
-        // Convert bounds to array format expected by WASM
-        const boundsArray = bounds ? [bounds[0], bounds[1], bounds[2], bounds[3]] : null;
+    // Update assignments ref from plan (stored in ref, not state, to avoid React overhead)
+    try {
+      const assignmentsObj = plan.assignments_dict();
+      if (assignmentsObj && typeof assignmentsObj === 'object') {
+        const assignmentsDict = assignmentsObj as Record<string, number>;
+        // Store in ref instead of state to avoid React re-renders and object cloning
+        assignmentsRef.current = assignmentsDict;
         
-        let geojsonValue: any;
-        if (layerName === "block") {
-          // For blocks, use plan.to_geojson to get districts
-          geojsonValue = plan.to_geojson(layerName, boundsArray);
-        } else {
-          // For county and vtd, use map.to_geojson (no districts for now)
-          // TODO: Add district aggregation for higher-level layers
-          if (!mapData?.wasmMap) {
-            console.warn(`No wasmMap available for layer ${layerName}`);
-            return null;
-          }
-          try {
-            // Use direct call (proxy approach has issues, using direct for now)
-            geojsonValue = mapData.wasmMap.to_geojson(layerName, boundsArray);
-            if (!geojsonValue) {
-              console.warn(`to_geojson returned null/undefined for layer ${layerName}`);
-              return null;
+        // Update district counts for UI display (lightweight)
+        const counts: Record<number, number> = {};
+        for (const district of Object.values(assignmentsDict)) {
+          counts[district] = (counts[district] ?? 0) + 1;
+        }
+        setDistrictCounts(counts);
             }
           } catch (err) {
-            console.error(`Error calling to_geojson for layer ${layerName}:`, err);
-            return null;
-          }
-        }
-        
-        if (!geojsonValue) {
-          console.warn(`GeoJSON value is null/undefined for layer ${layerName}`);
-          return null;
-        }
-        
-        // Validate the structure first before expensive conversion
-        if (typeof geojsonValue !== 'object') {
-          console.warn(`Invalid GeoJSON structure for layer ${layerName}:`, geojsonValue);
-          return null;
-        }
-        
-        if (!geojsonValue.features || !Array.isArray(geojsonValue.features)) {
-          console.warn(`GeoJSON missing features array for layer ${layerName}:`, geojsonValue);
-          return null;
-        }
-        
-        // Convert to plain JavaScript object to ensure it's serializable
-        // This handles cases where js_sys::JSON::parse might create non-serializable objects
-        // Only do the expensive conversion if the object appears to be a WASM object
-        // (has non-standard properties or isn't a plain object)
-        let plainObject: any;
-        try {
-          // Check if it's already a plain object by trying to serialize it
-          // If it fails, then we need to convert it
-          if (geojsonValue.constructor === Object || geojsonValue.constructor === Array) {
-            // Likely already a plain object, but verify by checking if it has WASM-specific properties
-            const hasWasmProperties = Object.getOwnPropertyNames(geojsonValue).some(
-              prop => prop.startsWith('__') || typeof (geojsonValue as any)[prop] === 'function'
-            );
-            if (!hasWasmProperties) {
-              // Already a plain object, use it directly
-              plainObject = geojsonValue;
-            } else {
-              // Has WASM properties, need to convert
-              plainObject = JSON.parse(JSON.stringify(geojsonValue));
-            }
-          } else {
-            // Not a plain object, need to convert
-            plainObject = JSON.parse(JSON.stringify(geojsonValue));
-          }
-        } catch (err) {
-          // If serialization fails, try the expensive conversion as fallback
-          console.warn(`Failed to serialize geojsonValue, using fallback conversion:`, err);
-          plainObject = JSON.parse(JSON.stringify(geojsonValue));
-        }
-        
-        return plainObject;
-      } catch (err) {
-        console.error(`Failed to get GeoJSON for layer ${layerName}:`, err);
-        return null;
-      }
-    };
-
-    // Check if current viewport is within loaded bounds
-    const isViewportWithinLoadedBounds = (viewportBounds: Bounds | null, layer: string): boolean => {
-      if (!viewportBounds) return false;
-      
-      const loaded = loadedBounds[layer];
-      if (!loaded) return false; // No data loaded for this layer yet
-      
-      return isViewportWithinBounds(viewportBounds, loaded);
-    };
-
-    const loadCurrentLayer = async () => {
-      // For block layer, we need plan. For other layers, we only need mapData.wasmMap
-      if (activeLayer === "block") {
-        if (!plan || !wasm) return;
-      } else {
-        if (!mapData?.wasmMap || !wasm) return;
-      }
-      
-      // If no bounds yet, wait for map to initialize
-      if (!mapBounds) {
-        console.log("Waiting for map bounds...");
-        return;
-      }
-      
-      // Check if viewport is still within loaded bounds for this layer
-      if (isViewportWithinLoadedBounds(mapBounds, activeLayer)) {
-        console.log(`Viewport still within loaded bounds for ${activeLayer}, skipping reload`);
-        return;
-      }
-      
-      // Check if there's already a loading request that covers this viewport
-      const currentRequest = loadingRequestRef.current;
-      if (currentRequest && currentRequest.layer === activeLayer) {
-        // Check if the current request's bounds already cover the new bounds
-        if (doesRequestCoverBounds(currentRequest.bounds, mapBounds)) {
-          console.log(`Current loading request already covers new viewport, skipping`);
-          return;
-        }
-      }
-      
-      // Cancel any previous loading request
-      if (loadingAbortControllerRef.current) {
-        console.log(`Cancelling previous loading request`);
-        loadingAbortControllerRef.current.abort();
-      }
-      
-      // Create new abort controller for this request
-      const abortController = new AbortController();
-      loadingAbortControllerRef.current = abortController;
-      
-      // Track this loading request
-      const requestId = { layer: activeLayer, bounds: mapBounds };
-      loadingRequestRef.current = requestId;
-      
-      updatingFromPlanRef.current = true;
-      setLoadingLayer(true);
-      setLoadingStatus(`Loading ${activeLayer} layer...`);
-      
-      try {
-        // Load only the active layer (viewport-based loading)
-        console.log(`Loading ${activeLayer} layer for viewport (bounds: ${mapBounds})`);
-        
-        // Check cache first
-        const cacheKey = `${activeLayer}:${mapBounds.join(',')}`;
-        let layerGeoJSON = geojsonCacheRef.current[cacheKey];
-        
-        if (!layerGeoJSON) {
-          // Load the active layer with viewport bounds
-          layerGeoJSON = await loadLayerGeoJSON(activeLayer, mapBounds);
-          
-          // Cache the result (limit cache size to prevent memory issues)
-          if (layerGeoJSON && Object.keys(geojsonCacheRef.current).length < 10) {
-            geojsonCacheRef.current[cacheKey] = layerGeoJSON;
-          }
-        } else {
-          console.log(`Using cached GeoJSON for ${activeLayer}`);
-        }
-        
-        // Check if this request was cancelled or superseded
-        if (abortController.signal.aborted || loadingRequestRef.current !== requestId) {
-          console.log(`Loading request was cancelled or superseded`);
-          return;
-        }
-        
-        if (layerGeoJSON && layerGeoJSON.features && Array.isArray(layerGeoJSON.features)) {
-          // Initialize feature hashes for new features
-          for (const f of layerGeoJSON.features) {
-            const featureId = String(f.id ?? f.properties?.geo_id ?? "");
-            const hash = String(f.properties?._hash ?? `${featureId}:${f.properties?.district ?? 0}`);
-            if (featureId) {
-              featureHashesRef.current[featureId] = hash;
-            }
-          }
-          
-          console.log(`Setting geojsonByLayer[${activeLayer}] with ${layerGeoJSON.features.length} features`);
-          setGeojsonByLayer((prev) => {
-            const updated = {
-              ...prev,
-              [activeLayer]: layerGeoJSON,
-            };
-            console.log(`Updated geojsonByLayer, now has layers: [${Object.keys(updated).join(', ')}]`);
-            return updated;
-          });
-          setGeojson(layerGeoJSON);
-          
-          // Update loaded bounds for this layer (both state and ref)
-          setLoadedBounds((prev) => {
-            const updated = { ...prev, [activeLayer]: mapBounds };
-            loadedBoundsRef.current = updated; // Keep ref in sync for immediate access
-            return updated;
-          });
-          
-          console.log(`Loaded ${activeLayer} layer: ${layerGeoJSON.features.length} features (viewport-filtered)`);
-        } else {
-          console.warn(`Failed to load ${activeLayer} layer GeoJSON`);
-        }
-        
-        // For assignments, we still need to load all blocks (but we can do this less frequently)
-        // Only update assignments when plan changes, not on every viewport change
-        if (activeLayer === "block" && layerGeoJSON?.features && plan) {
-          const assignmentsArray = plan.assignments_u32();
-          const assignmentsDict: Record<string, number> = {};
-
-          layerGeoJSON.features.forEach((feature: any, idx: number) => {
-            const geoId = String(feature.properties?.geo_id ?? feature.properties?.GEOID20 ?? idx);
-            const district = assignmentsArray[idx] || 0;
-            if (district > 0) {
-              assignmentsDict[geoId] = district;
-            }
-          });
-
-          setAssignments(assignmentsDict);
-        }
-        
-        setLoadingStatus("");
-        
-        // Clear the loading request on success (only if this is still the current request)
-        if (loadingRequestRef.current === requestId) {
-          loadingRequestRef.current = null;
-          setLoadingLayer(false); // Clear loading state when request completes successfully
-        }
-      } catch (err) {
-        // Check if this was an abort error or if request was superseded
-        if (abortController.signal.aborted || loadingRequestRef.current !== requestId) {
-          console.log(`Loading request was aborted or superseded`);
-          return;
-        }
-        console.error("Failed to load GeoJSON layer:", err);
-        setLoadingStatus("Error loading layer");
-        
-        // Clear the loading request on error (only if this is still the current request)
-        if (loadingRequestRef.current === requestId) {
-          loadingRequestRef.current = null;
-          setLoadingLayer(false); // Clear loading state when request fails
-        }
-      } finally {
-        // Clear abort controller if this is still the current one
-        if (loadingAbortControllerRef.current === abortController) {
-          loadingAbortControllerRef.current = null;
-        }
-        // Reset flag after a short delay to allow effects to run
-        // Note: This timeout is intentionally not cleaned up as it's part of the async flow
-        // and should complete even if the component unmounts during the delay
-        setTimeout(() => {
-          updatingFromPlanRef.current = false;
-        }, UPDATE_FLAG_RESET_DELAY_MS);
-      }
-    };
-
-    loadCurrentLayer();
-  }, [plan, wasm, planUpdateTrigger, activeLayer, mapBounds, mapData]);
+      console.error("Failed to get assignments from plan:", err);
+    }
+  }, [planUpdateTrigger, plan, activeLayer]);
 
   // Initialize map only once
   useEffect(() => {
     if (!mapDivRef.current || mapRef.current) return;
+
+    // Set up PMTiles protocol handler
+    setupPmtilesProtocol();
 
     const map = new maplibregl.Map({
       container: mapDivRef.current,
       style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
       center: [-89.0, 40.0], // Illinois center
       zoom: DEFAULT_ZOOM,
-    });
+      // CRITICAL FIX: Enable anti-aliasing to eliminate phantom tile boundaries
+      // Note: antialias is supported but may not be in all type definitions
+      antialias: true,
+      // OPTIMIZATION: Improve rendering quality
+      fadeDuration: 0, // Disable fade-in animation for instant tile display
+      // Enable pixel ratio for high-DPI displays
+      pixelRatio: window.devicePixelRatio || 1,
+    } as any); // Type assertion needed for antialias property
     mapRef.current = map;
 
     map.on("load", () => {
       // Source and layers will be added by the effect that watches geojsonByLayer
       // Don't add them here since geojson might not be loaded yet
 
-      // Calculate bounds with padding (extends beyond visible area to preload nearby features)
-      const calculatePaddedBounds = (): [number, number, number, number] => {
-        const bounds = map.getBounds();
-        const west = bounds.getWest();
-        const south = bounds.getSouth();
-        const east = bounds.getEast();
-        const north = bounds.getNorth();
-        
-        // Add padding on each side to preload nearby features
-        const lonPadding = (east - west) * BOUNDS_PADDING_FACTOR;
-        const latPadding = (north - south) * BOUNDS_PADDING_FACTOR;
-        
-        return [
-          west - lonPadding,
-          south - latPadding,
-          east + lonPadding,
-          north + latPadding,
-        ];
-      };
-
-      // Bounds update for panning (loads features as they pan into view)
-      // Use throttle instead of debounce so it triggers during continuous panning
-      const updateBoundsDuringPan = () => {
-        const zoom = map.getZoom();
-        setCurrentZoom(zoom);
-        
-        // Use activeLayerRef to get the current active layer (not calculated from zoom)
-        // This ensures we only check bounds for the layer that's actually active,
-        // not the layer that would be active at the current zoom (which might change during rapid zooming)
-        const activeLayerForBounds = activeLayerRef.current; // Use the tracked active layer
-        
-        // Get current viewport bounds (without padding) to check if we need to load
-        const bounds = map.getBounds();
-        const viewportWest = bounds.getWest();
-        const viewportSouth = bounds.getSouth();
-        const viewportEast = bounds.getEast();
-        const viewportNorth = bounds.getNorth();
-        
-        // Check if viewport has moved outside loaded bounds using ref for immediate access
-        const loaded = loadedBoundsRef.current[activeLayerForBounds];
-        
-        let shouldLoad = false;
-        
-        if (!loaded) {
-          // No data loaded for this layer, load it
-          shouldLoad = true;
-        } else {
-          // Check if current viewport (not padded) has moved outside the loaded area
-          // The loaded area already includes padding, so we check if viewport is outside it
-          const viewportBoundsArray: Bounds = [viewportWest, viewportSouth, viewportEast, viewportNorth];
-          if (isViewportOutsideLoadedArea(viewportBoundsArray, loaded)) {
-            // Viewport has moved outside loaded area, load new features
-            shouldLoad = true;
-          }
-        }
-        
-        // If we need to load, use padded bounds for the actual request
-        if (shouldLoad) {
-          const newBounds = calculatePaddedBounds();
-          const now = Date.now();
-          const timeSinceLastLoad = now - lastLoadTimeRef.current;
-          
-          // If enough time has passed since last load, load immediately
-          if (timeSinceLastLoad >= THROTTLE_DELAY_MS) {
-            lastLoadTimeRef.current = now;
-            setMapBounds(newBounds);
-          } else {
-            // Otherwise, schedule a load after the throttle delay
-            if (throttleTimeoutRef.current) {
-              clearTimeout(throttleTimeoutRef.current);
-            }
-            throttleTimeoutRef.current = setTimeout(() => {
-              lastLoadTimeRef.current = Date.now();
-              setMapBounds(newBounds);
-            }, THROTTLE_DELAY_MS - timeSinceLastLoad);
-          }
-        }
-      };
-
-      // Track zoom level changes - only update when crossing layer thresholds
-      // Use debounce to avoid rapid updates during zoom animations
+      // Track zoom level changes to switch between layers (county/vtd/block)
+      // Use zoomend instead of zoom to avoid constant re-renders during zoom gestures
       map.on("zoomend", () => {
-        // Clear any pending zoom update
-        if (zoomDebounceTimeoutRef.current) {
-          clearTimeout(zoomDebounceTimeoutRef.current);
-        }
-        
-        // Debounce zoomend to batch rapid events
-        zoomDebounceTimeoutRef.current = setTimeout(() => {
           const zoom = map.getZoom();
           const newLayer = getLayerForZoom(zoom);
           const previousLayer = previousLayerRef.current;
           
-          // Only update activeLayer (which triggers effects) if layer changed
+        // Update layer when threshold is crossed
           if (newLayer !== previousLayer) {
             console.log(`Layer changed from ${previousLayer} to ${newLayer} at zoom ${zoom}`);
-            previousLayerRef.current = newLayer;
-            activeLayerRef.current = newLayer; // Update ref immediately
-            setActiveLayer(newLayer); // This triggers the effect to reload data
-            setCurrentLayer(newLayer);
-            // Clear loaded bounds for the new layer to force reload
-            setLoadedBounds((prev) => {
-              const updated = { ...prev };
-              delete updated[newLayer];
-              return updated;
-            });
-            const newBounds = calculatePaddedBounds();
-            setMapBounds(newBounds);
-          } else {
-            // Layer didn't change - check if viewport exceeds loaded area
-            const currentViewportBounds = map.getBounds();
-            const viewportBoundsArray: [number, number, number, number] = [
-              currentViewportBounds.getWest(),
-              currentViewportBounds.getSouth(),
-              currentViewportBounds.getEast(),
-              currentViewportBounds.getNorth(),
-            ];
-            
-            // Check if viewport exceeds loaded bounds for current layer using ref
-            const loaded = loadedBoundsRef.current[newLayer];
-            if (!loaded) {
-              // No data loaded for this layer yet, need to load
-              console.log(`No data loaded for ${newLayer} after zoom, reloading...`);
-              const newBounds = calculatePaddedBounds();
-              setMapBounds(newBounds);
-            } else {
-              if (doesViewportExceedBounds(viewportBoundsArray, loaded)) {
-                console.log(`Viewport exceeds loaded bounds for ${newLayer} after zoom, reloading...`);
-                const newBounds = calculatePaddedBounds();
-                setMapBounds(newBounds);
-              } else {
-                console.log(`Viewport still within loaded bounds for ${newLayer} after zoom, skipping reload`);
-              }
-            }
-          }
-          // Always update display zoom
-          setCurrentZoom(zoom);
-        }, ZOOM_DEBOUNCE_MS); // Debounce to avoid rapid updates
-      });
-      
-      // Track zoom for immediate UI feedback and layer switching
-      // Update activeLayer immediately when crossing thresholds to avoid delays
-      map.on("zoom", () => {
-        const zoom = map.getZoom();
-        const newLayer = getLayerForZoom(zoom);
-        const previousLayer = previousLayerRef.current;
-        
-        // If layer threshold crossed, update activeLayer immediately (not just on zoomend)
-        // This ensures data loading switches layers during slow zooming
-        if (newLayer !== previousLayer) {
-          console.log(`Layer threshold crossed: ${previousLayer} → ${newLayer} at zoom ${zoom}`);
           previousLayerRef.current = newLayer;
           activeLayerRef.current = newLayer;
-          setActiveLayer(newLayer); // This triggers data reload
-          setCurrentLayer(newLayer);
-          // Clear loaded bounds for the new layer to force reload
-          setLoadedBounds((prev) => {
-            const updated = { ...prev };
-            delete updated[newLayer];
-            loadedBoundsRef.current = updated; // Keep ref in sync
-            return updated;
-          });
-          // Trigger bounds update to load new layer data
-          const newBounds = calculatePaddedBounds();
-          setMapBounds(newBounds);
-        } else if (newLayer !== currentLayer) {
-          // Layer didn't change but display layer is out of sync, just update display
-          setCurrentLayer(newLayer);
-        }
-      });
-
-      // Track map movement - load features as they pan into view
-      map.on("move", () => {
-        updateBoundsDuringPan();
-      });
-
-      // Also update on moveend (when user stops dragging/zooming)
-      map.on("moveend", () => {
-        // Clear any pending throttled updates
-        if (throttleTimeoutRef.current) {
-          clearTimeout(throttleTimeoutRef.current);
-        }
-        const zoom = map.getZoom();
-        const newLayer = getLayerForZoom(zoom);
-        setCurrentZoom(zoom);
-        // Update layer tracking
-        const previousLayer = previousLayerRef.current;
-        previousLayerRef.current = newLayer;
-        setCurrentLayer(newLayer);
-        
-        // Only update activeLayer if layer changed (to avoid unnecessary reloads)
-        if (newLayer !== previousLayer) {
-          activeLayerRef.current = newLayer; // Update ref immediately
-          setActiveLayer(newLayer);
-          // Clear loaded bounds for the new layer to force reload
-          setLoadedBounds((prev) => {
-            const updated = { ...prev };
-            delete updated[newLayer];
-            loadedBoundsRef.current = updated; // Keep ref in sync
-            return updated;
-          });
-          const finalBounds = calculatePaddedBounds();
-          setMapBounds(finalBounds);
-        } else {
-          // Layer didn't change - check if viewport exceeds loaded area
-          const currentViewportBounds = map.getBounds();
-          const viewportBoundsArray: [number, number, number, number] = [
-            currentViewportBounds.getWest(),
-            currentViewportBounds.getSouth(),
-            currentViewportBounds.getEast(),
-            currentViewportBounds.getNorth(),
-          ];
           
-          // Check if viewport exceeds loaded bounds for current layer using ref
-          const loaded = loadedBoundsRef.current[newLayer];
-          if (!loaded) {
-            // No data loaded for this layer yet, need to load
-            console.log(`No data loaded for ${newLayer} after move, reloading...`);
-            const finalBounds = calculatePaddedBounds();
-            setMapBounds(finalBounds);
-          } else {
-            if (doesViewportExceedBounds(viewportBoundsArray, loaded)) {
-              console.log(`Viewport exceeds loaded bounds for ${newLayer} after move, reloading...`);
-              const finalBounds = calculatePaddedBounds();
-              setMapBounds(finalBounds);
+          // OPTIMIZATION: Directly toggle layer visibility without React state updates
+          // All layers are already loaded, so we just show/hide them
+          const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+          for (const layerName of allLayers) {
+            const fillLayerId = `units-${layerName}-fill`;
+            const lineLayerId = `units-${layerName}-line`;
+            const visibility = layerName === newLayer ? "visible" : "none";
+            
+            if (map.getLayer(fillLayerId)) {
+              map.setLayoutProperty(fillLayerId, "visibility", visibility);
+            }
+            if (map.getLayer(lineLayerId)) {
+              map.setLayoutProperty(lineLayerId, "visibility", visibility);
             }
           }
+          
+          // Update React state for UI (but layer is already switched)
+          setActiveLayer(newLayer);
+          setCurrentLayer(newLayer);
         }
+        setCurrentZoom(zoom);
       });
 
-      // Initial bounds and layer tracking
+      // Initial layer setup
       const initialZoom = map.getZoom();
       const initialLayer = getLayerForZoom(initialZoom);
       previousLayerRef.current = initialLayer;
-      activeLayerRef.current = initialLayer; // Update ref immediately
-      setActiveLayer(initialLayer); // Set active layer to trigger initial data load
+      activeLayerRef.current = initialLayer;
+      setActiveLayer(initialLayer);
       setCurrentLayer(initialLayer);
       setCurrentZoom(initialZoom);
-      const initialBounds = calculatePaddedBounds();
-      setMapBounds(initialBounds);
-      // Initialize ref
-      loadedBoundsRef.current = {};
 
       setMapInitialized(true);
     });
 
     return () => {
-      // Clear timeouts on unmount
-      if (throttleTimeoutRef.current) {
-        clearTimeout(throttleTimeoutRef.current);
-      }
-      if (zoomDebounceTimeoutRef.current) {
-        clearTimeout(zoomDebounceTimeoutRef.current);
-      }
+      // Cleanup on unmount
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -780,191 +447,370 @@ export default function App() {
     };
   }, []); // Only run once on mount
 
-  // Update displayed layer based on currentLayer (which only changes when layer threshold is crossed)
-  // This effect watches geojsonByLayer and currentLayer, NOT currentZoom
+  // Set up PMTiles vector tile source once (single file with all layers)
+  // Then toggle layer visibility for fast switching
   useEffect(() => {
     if (!mapRef.current || !mapInitialized) {
       return;
     }
     
-    // Use currentLayer instead of calculating from currentZoom
-    // currentLayer is only updated when the layer actually changes (county → vtd → block)
-    const layerGeoJSON = geojsonByLayer[currentLayer];
-    
-    // Ensure the GeoJSON has the correct structure
-    if (!layerGeoJSON || !layerGeoJSON.features || !Array.isArray(layerGeoJSON.features)) {
-      return;
-    }
-    
-    console.log(`Effect triggered: updating map with layer ${currentLayer}, ${layerGeoJSON.features.length} features`);
-
     const map = mapRef.current;
-    let source = map.getSource("units") as maplibregl.GeoJSONSource;
+    const sourceId = "units-all"; // Single source for all layers
 
-    if (!source) {
-      // Source doesn't exist yet, add it
-      console.log("Adding source and layers to map");
-      map.addSource("units", { 
-        type: "geojson", 
-        data: layerGeoJSON,
-        promoteId: "id" // Use the 'id' property for feature identification
-      });
+    // Load the single multi-layer PMTiles source if not already loaded
+    if (!loadedSourcesRef.current.has("all")) {
+      const pmtilesPath = `/packs/IL_2020_webpack/geom/geometries.pmtiles`;
+      console.log(`Loading multi-layer PMTiles source`);
+      setLoadingStatus(`Loading geometry layers...`);
+      
+      try {
+        // Add single source with all layers
+        map.addSource(sourceId, {
+          type: "vector",
+          url: `pmtiles://${pmtilesPath}`,
+          // Performance hints for MapLibre
+          scheme: "xyz",
+          bounds: [-91.5, 36.9, -87.0, 42.5], // Illinois bounds (approximate)
+        } as any);
 
-      // Check if layers already exist before adding
-      if (!map.getLayer("units-fill")) {
-      map.addLayer({
-        id: "units-fill",
-        type: "fill",
-        source: "units",
-        paint: {
-          // Use properties directly - MapLibre optimizes updates when using feature IDs
-          "fill-color": ["case",
-            ["has", "district"],
-            ["get", "district_color"],
-            "rgba(0,0,0,0)"
+        // Define paint style for fill layers (supports both district and partisan visualization)
+        const fillPaint: any = {
+          "fill-color": [
+            "case",
+            // If partisanLean feature-state exists (not null), use partisan coloring
+            ["!=", ["feature-state", "partisanLean"], null],
+            [
+              "interpolate",
+              ["linear"],
+              ["feature-state", "partisanLean"],
+              -1, "#ff0000",    // 100% Republican = red
+              -0.5, "#ff8080",  // 75% Republican = light red
+              0, "#e8e8e8",     // 50-50 = light gray
+              0.5, "#8080ff",   // 75% Democrat = light blue
+              1, "#0000ff"      // 100% Democrat = blue
+            ],
+            // Otherwise use district coloring
+            [
+              "match",
+              ["feature-state", "district"],
+              1, "hsl(57 70% 50%)",
+              2, "hsl(114 70% 50%)",
+              3, "hsl(171 70% 50%)",
+              4, "hsl(228 70% 50%)",
+              5, "hsl(285 70% 50%)",
+              6, "hsl(342 70% 50%)",
+              7, "hsl(39 70% 50%)",
+              8, "hsl(96 70% 50%)",
+              9, "hsl(153 70% 50%)",
+              10, "hsl(210 70% 50%)",
+              "rgba(0,0,0,0)"
+            ]
           ],
-          "fill-opacity": 0.55
-        },
-      });
-      }
+          "fill-opacity": 0.7,
+          "fill-antialias": true,
+        };
 
-      if (!map.getLayer("units-line")) {
-      map.addLayer({
-        id: "units-line",
-        type: "line",
-        source: "units",
-        paint: { "line-width": 1, "line-color": "rgba(0,0,0,0.35)" },
-      });
-      }
+        // Define paint style for line layers (shared across all layers)
+        const linePaint: any = {
+          "line-width": 1.5,
+          "line-color": "rgba(0,0,0,0.4)",
+          "line-gap-width": 0,
+          "line-blur": 0.5
+        };
 
-      // Fit map to GeoJSON bounds (only on first load)
-      // Check if this is the initial load by checking if we're at the initial zoom
-      if (layerGeoJSON?.features?.length > 0 && map.getZoom() === DEFAULT_ZOOM) {
-        let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
-        layerGeoJSON.features.forEach((feature: any) => {
-          if (feature.geometry?.coordinates) {
-            const coords = feature.geometry.coordinates.flat(3);
-            for (let i = 0; i < coords.length; i += 2) {
-              const lon = coords[i];
-              const lat = coords[i + 1];
-              if (typeof lon === 'number' && typeof lat === 'number') {
-                minLon = Math.min(minLon, lon);
-                minLat = Math.min(minLat, lat);
-                maxLon = Math.max(maxLon, lon);
-                maxLat = Math.max(maxLat, lat);
-              }
+        const lineLayout: any = {
+          "line-cap": "round",
+          "line-join": "round"
+        };
+
+        // Create fill and line layers for each geometry layer
+        const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          const lineLayerId = `units-${layerName}-line`;
+
+          // Add fill layer
+          map.addLayer({
+            id: fillLayerId,
+            type: "fill",
+            source: sourceId,
+            "source-layer": layerName, // Reference the layer name from PMTiles
+            paint: fillPaint,
+            layout: {
+              visibility: "none" // Start hidden, will show current layer below
             }
+          });
+
+          // Add line layer
+          map.addLayer({
+            id: lineLayerId,
+            type: "line",
+            source: sourceId,
+            "source-layer": layerName, // Reference the layer name from PMTiles
+            paint: linePaint,
+            layout: {
+              ...lineLayout,
+              visibility: "none" // Start hidden, will show current layer below
+            }
+          });
+        }
+
+        // Mark as loaded
+        loadedSourcesRef.current.add("all");
+
+        // Handle source errors
+        const source = map.getSource(sourceId) as maplibregl.VectorTileSource;
+        source.on("error", (e: any) => {
+          console.error(`PMTiles source error:`, e);
+          setLoadingStatus(`Error loading geometry layers`);
+        });
+
+        source.on("data", (e: any) => {
+          if (e.dataType === "source" && e.isSourceLoaded) {
+            console.log(`Multi-layer PMTiles source loaded - all layers ready`);
+            setLoadingStatus("");
           }
         });
-        if (isFinite(minLon)) {
-          map.fitBounds([[minLon, minLat], [maxLon, maxLat]], { padding: 20 });
+      } catch (err) {
+        console.error(`Failed to add multi-layer PMTiles source:`, err);
+        setLoadingStatus(`Error: Failed to load geometry layers`);
+      }
+    }
+  }, [mapInitialized]);
+
+  // Toggle layer visibility when currentLayer changes
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has("all")) {
+      return;
+    }
+
+    const map = mapRef.current;
+    const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+
+    // Show current layer, hide all others
+    for (const layerName of allLayers) {
+      const fillLayerId = `units-${layerName}-fill`;
+      const lineLayerId = `units-${layerName}-line`;
+      
+      const fillLayer = map.getLayer(fillLayerId);
+      const lineLayer = map.getLayer(lineLayerId);
+      
+      const visibility = layerName === currentLayer ? "visible" : "none";
+      
+      if (fillLayer) {
+        map.setLayoutProperty(fillLayerId, "visibility", visibility);
+      }
+      if (lineLayer) {
+        map.setLayoutProperty(lineLayerId, "visibility", visibility);
+      }
+    }
+  }, [currentLayer, mapInitialized]);
+  
+  // Toggle line visibility based on visualization mode
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has("all")) {
+      return;
+    }
+
+    const map = mapRef.current;
+    const allLayers = ["state", "county", "tract", "group", "vtd", "block"];
+
+    // Hide lines in partisan mode, show in district mode
+    const lineVisibility = visualizationMode === "partisan" ? "none" : "visible";
+    
+    for (const layerName of allLayers) {
+      const lineLayerId = `units-${layerName}-line`;
+      const lineLayer = map.getLayer(lineLayerId);
+      
+      if (lineLayer) {
+        // Only update if the layer is currently visible (matches currentLayer)
+        if (layerName === currentLayer) {
+          map.setLayoutProperty(lineLayerId, "visibility", lineVisibility);
         }
       }
-    } else {
-      // Source exists, update the data with the appropriate layer
-      console.log(`Updating map with ${layerGeoJSON.features.length} features for layer ${currentLayer}`);
-      source.setData(layerGeoJSON);
     }
-    
-    // Always update geojson state to keep it in sync
-    setGeojson(layerGeoJSON);
-  }, [geojsonByLayer, mapInitialized, currentLayer]); // Removed currentZoom from deps - only update when layer or data changes
+  }, [visualizationMode, currentLayer, mapInitialized]);
 
-  // Set up map event handlers once
+  // Set up map event handlers for paint mode
+  // Properly cleanup handlers when layer changes to avoid leaks
   useEffect(() => {
     if (!mapRef.current || !mapInitialized) return;
 
     const map = mapRef.current;
+    const fillLayerId = `units-${currentLayer}-fill`;
 
-    // Remove existing listeners to avoid duplicates
-    // Note: MapLibre's off() for layer events requires the listener function, so we'll just re-add them
-    // The effect dependencies will handle cleanup
+    if (!map.getLayer(fillLayerId)) return;
 
-      // hover cursor
-      map.on("mousemove", "units-fill", () => {
+    // Create stable handler functions for proper cleanup
+    const handleMouseMove = () => {
         map.getCanvas().style.cursor = paintMode ? "crosshair" : "pointer";
-      });
-      map.on("mouseleave", "units-fill", () => {
+    };
+    
+    const handleMouseLeave = () => {
         map.getCanvas().style.cursor = "";
-      });
+    };
 
-      // paint on click
-      map.on("click", "units-fill", (e) => {
+    const handleClick = (e: any) => {
         if (!paintMode) return;
         const f = e.features?.[0] as any;
-      const id: FeatureId = String(f?.properties?.geo_id ?? f?.properties?.GEOID20 ?? f?.properties?.id ?? "");
+      const id: FeatureId = String(f?.properties?.geo_id ?? "");
         if (!id) return;
 
-        setAssignments((prev) => ({ ...prev, [id]: activeDistrict }));
+      // Update assignments ref (no React state update = no re-render)
+      const prevDistrict = assignmentsRef.current[id];
+      assignmentsRef.current[id] = activeDistrict;
+      
+      // Update district counts incrementally (lightweight UI state)
+      setDistrictCounts((c) => {
+        const next = { ...c };
+        if (prevDistrict != null) {
+          next[prevDistrict] = (next[prevDistrict] ?? 1) - 1;
+        }
+        next[activeDistrict] = (next[activeDistrict] ?? 0) + 1;
+        return next;
       });
-  }, [paintMode, activeDistrict, mapInitialized]);
-
-  // Update map source when assignments change (for manual painting only)
-  // Uses MapLibre Feature State API for efficient updates without regenerating GeoJSON
-  useEffect(() => {
-    if (!geojson || !mapRef.current || !mapInitialized || updatingFromPlanRef.current) return;
-    
-    // Ensure geojson has features array
-    if (!geojson.features || !Array.isArray(geojson.features)) {
-      console.warn("GeoJSON missing features array:", geojson);
-      return;
-    }
-
-    const map = mapRef.current;
-    const src = map.getSource("units") as maplibregl.GeoJSONSource;
-    if (!src) return;
-
-    // Build updated features with current assignments
-    // MapLibre will use feature IDs to efficiently diff and update only changed features
-    let changedCount = 0;
-    const updatedFeatures = geojson.features.map((f: any) => {
-      const featureId = String(f.id ?? f.properties?.geo_id ?? f.properties?.GEOID20 ?? "");
-      const id = String(f.properties?.geo_id ?? f.properties?.GEOID20 ?? f.properties?.id ?? "");
-      const d = assignments[id] ?? f.properties?.district ?? null;
       
-      // Calculate new hash: geo_id:district
-      const newHash = `${id}:${d ?? 0}`;
-      const oldHash = featureHashesRef.current[featureId];
-      
-      // Track if this feature changed
-      if (newHash !== oldHash) {
-        changedCount++;
-        featureHashesRef.current[featureId] = newHash;
-      }
-      
-      return {
-        ...f,
-        id: featureId, // Ensure feature ID is set for MapLibre
-        properties: {
-          ...f.properties,
-          district: d ?? null,
-          district_color: d ? hashColor(d) : null,
-          _hash: newHash,
+      // Update feature-state immediately for responsive UI (only district number, color in style)
+      const sourceId = "units-all"; // Single source for all layers
+      map.setFeatureState(
+        {
+          source: sourceId,
+          sourceLayer: currentLayer, // Use layer name as source-layer
+          id: id
         },
-      };
-    });
+        {
+          district: activeDistrict
+        }
+      );
+      
+      // Update hash for change tracking
+      featureHashesRef.current[id] = `${id}:${activeDistrict}`;
+    };
 
-    // Update source - MapLibre will use feature IDs to efficiently update only changed features
-    // Defer the update to avoid blocking the UI
-    if (changedCount > 0) {
-      console.log(`Updating ${changedCount} of ${geojson.features.length} features (hash-based diff)`);
-      
-      // Use requestIdleCallback to defer the update for better responsiveness
-      const updateSource = () => {
-        src.setData({
-          type: "FeatureCollection",
-          features: updatedFeatures,
-        });
-      };
-      
-      if (typeof requestIdleCallback !== 'undefined') {
-        requestIdleCallback(updateSource, { timeout: 100 });
-      } else {
-        // Fallback for browsers without requestIdleCallback
-        setTimeout(updateSource, 0);
+    // Add handlers
+    map.on("mousemove", fillLayerId, handleMouseMove);
+    map.on("mouseleave", fillLayerId, handleMouseLeave);
+    map.on("click", fillLayerId, handleClick);
+
+    // Cleanup: remove handlers when layer changes or component unmounts
+    return () => {
+      map.off("mousemove", fillLayerId, handleMouseMove);
+      map.off("mouseleave", fillLayerId, handleMouseLeave);
+      map.off("click", fillLayerId, handleClick);
+    };
+  }, [paintMode, activeDistrict, mapInitialized, currentLayer]);
+
+  // Update feature-state for district assignments when plan changes
+  // This uses MapLibre's feature-state API to efficiently update colors without regenerating tiles
+  // OPTIMIZED: Only updates visible features, batches updates, and debounces during tile loading
+  useEffect(() => {
+    if (!plan || !mapRef.current || !mapInitialized || updatingFromPlanRef.current) return;
+    
+    const map = mapRef.current;
+    const layerName = currentLayer;
+    const sourceId = "units-all"; // Single source for all layers
+    const fillLayerId = `units-${layerName}-fill`;
+    const source = map.getSource(sourceId) as maplibregl.VectorTileSource;
+    
+    if (!source) return; // Source not loaded yet
+
+    // Get assignments from plan (only for block layer, other layers don't have districts)
+    if (layerName !== "block") return;
+
+    // Update feature-state for rendered features only (what's actually on screen)
+    // Look up districts from assignmentsRef (not from WASM on every update)
+    const updateFeatureStates = () => {
+      try {
+        const fillLayer = map.getLayer(fillLayerId);
+        if (!fillLayer) return;
+
+        // OPTIMIZATION: Only query rendered features (visible on screen)
+        // This is much faster than updating all features in the dataset
+        const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+
+        // OPTIMIZATION: Batch feature-state updates to reduce repaints
+        let updatedCount = 0;
+        const updates: Array<{ id: string; district: number | null }> = [];
+        
+        for (const feature of features) {
+          const geoId = feature.properties?.geo_id;
+          if (!geoId) continue;
+
+          // Look up district from ref (fast, no WASM boundary crossing)
+          const district = assignmentsRef.current[geoId] ?? null;
+          const newHash = `${geoId}:${district ?? 0}`;
+          const oldHash = featureHashesRef.current[geoId];
+
+          // Only update if changed
+          if (newHash !== oldHash) {
+            featureHashesRef.current[geoId] = newHash;
+            updates.push({ id: geoId, district });
+            updatedCount++;
+          }
+        }
+
+        // Apply all updates in a single batch
+        if (updates.length > 0) {
+          for (const { id, district } of updates) {
+            map.setFeatureState(
+              {
+                source: sourceId,
+                sourceLayer: layerName, // Use layer name as source-layer
+                id: id
+              },
+              {
+                district: district ?? null
+              }
+            );
+          }
+          console.log(`Updated feature-state for ${updatedCount} rendered features`);
+        }
+      } catch (err) {
+        console.error("Error updating feature states:", err);
       }
-    }
-  }, [assignments, geojson, mapInitialized]);
+    };
+
+    // OPTIMIZATION: Debounce updates to avoid blocking during tile loading
+    // Use a longer delay to let tiles fully load before updating feature states
+    let timeoutId: number | null = null;
+    let pending = false;
+    
+    const schedule = () => {
+      if (pending) return;
+      pending = true;
+      
+      // Clear any pending timeout
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+      
+      // Debounce: wait 200ms after last event before updating
+      timeoutId = window.setTimeout(() => {
+        pending = false;
+        timeoutId = null;
+        requestAnimationFrame(updateFeatureStates);
+      }, 200);
+    };
+
+    // Update when camera settles (not during active panning/zooming)
+    map.on("moveend", schedule);
+    map.on("zoomend", schedule);
+    
+    // OPTIMIZATION: Use 'idle' event to update only when map is fully loaded
+    // This ensures tiles are loaded before we try to update feature states
+    map.on("idle", schedule);
+
+    // Initial update after tiles have had time to load
+    const initialTimeoutId = setTimeout(schedule, 300);
+
+    return () => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      clearTimeout(initialTimeoutId);
+      map.off("moveend", schedule);
+      map.off("zoomend", schedule);
+      map.off("idle", schedule);
+    };
+  }, [planUpdateTrigger, plan, currentLayer, mapInitialized]);
 
   const handleRandomize = () => {
     if (!plan) return;
@@ -1029,6 +875,32 @@ export default function App() {
           Optimize (Equalize Pop)
         </button>
 
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: "block", marginBottom: 4 }}>Visualization:</label>
+          <div style={{ display: "flex", gap: 4 }}>
+            <button
+              onClick={() => setVisualizationMode("districts")}
+              style={{
+                flex: 1,
+                backgroundColor: visualizationMode === "districts" ? "#4CAF50" : "#f0f0f0",
+                color: visualizationMode === "districts" ? "white" : "black",
+              }}
+            >
+              Districts
+            </button>
+            <button
+              onClick={() => setVisualizationMode("partisan")}
+              style={{
+                flex: 1,
+                backgroundColor: visualizationMode === "partisan" ? "#4CAF50" : "#f0f0f0",
+                color: visualizationMode === "partisan" ? "white" : "black",
+              }}
+            >
+              Partisan Lean
+            </button>
+          </div>
+        </div>
+
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
           <label>District:</label>
           <input
@@ -1044,7 +916,25 @@ export default function App() {
         </div>
 
         <button
-          onClick={() => setAssignments({})}
+          onClick={() => {
+            assignmentsRef.current = {};
+            setDistrictCounts({});
+            // Clear all feature states
+            if (mapRef.current && currentLayer === "block") {
+              const sourceId = "units-all"; // Single source for all layers
+              const fillLayerId = `units-${currentLayer}-fill`;
+              const features = mapRef.current.queryRenderedFeatures({ layers: [fillLayerId] });
+              for (const feature of features) {
+                const geoId = feature.properties?.geo_id;
+                if (geoId) {
+                  mapRef.current.setFeatureState(
+                    { source: sourceId, sourceLayer: currentLayer, id: geoId },
+                    { district: null }
+                  );
+                }
+              }
+            }
+          }}
           style={{ width: "100%", marginBottom: 12 }}
         >
           Clear assignments
@@ -1052,12 +942,12 @@ export default function App() {
 
         <h3 style={{ margin: "12px 0 6px 0" }}>Metrics (toy)</h3>
         <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13 }}>
-          {Object.keys(metrics).length === 0 && <div>(no assignments yet)</div>}
-          {Object.entries(metrics)
+          {Object.keys(districtCounts).length === 0 && <div>(no assignments yet)</div>}
+          {Object.entries(districtCounts)
             .sort((a, b) => Number(a[0]) - Number(b[0]))
             .map(([d, c]) => (
               <div key={d}>
-                D{d}: {c} units
+                D{d}: {String(c)} units
               </div>
             ))}
         </div>
@@ -1076,7 +966,7 @@ export default function App() {
       <div style={{ position: "relative", width: "100%", height: "100%" }}>
         <div ref={mapDivRef} style={{ width: "100%", height: "100%" }} />
         {/* Loading indicator overlay */}
-        {(loadingPack || loadingLayer) && (
+        {loadingPack && (
           <div
             style={{
               position: "absolute",
