@@ -20,7 +20,6 @@ export function useWasm() {
         
         // Now the module is initialized and ready to use
         setWasm(module);
-        console.log("WASM module initialized successfully");
       } catch (err) {
         console.error("Failed to load WASM module:", err);
         setError(err as Error);

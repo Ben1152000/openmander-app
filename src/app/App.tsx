@@ -3,6 +3,7 @@ import maplibregl, { Map } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { useWasm } from '@/useWasm';
 import { loadPackFromDirectory } from '@/loadPack';
+import { loadAndCachePMTiles, setPMTilesBuffer } from '@/pmtilesCache';
 import { SidePanel } from '@/app/components/SidePanel';
 import { MapViewer } from '@/app/components/MapViewer';
 import '@/App.css';
@@ -13,8 +14,10 @@ let pmtilesProtocolSetup = false;
 
 function setupPmtilesProtocol() {
   if (pmtilesProtocolSetup) return;
+
   const protocol = new Protocol();
   maplibregl.addProtocol('pmtiles', protocol.tile);
+
   pmtilesProtocolSetup = true;
 }
 
@@ -44,6 +47,7 @@ export default function App() {
   // Loading states
   const [loadingPack, setLoadingPack] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
+  const [pmtilesBufferReady, setPmtilesBufferReady] = useState(false);
   
   // Level-of-detail: track current layer
   const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_ZOOM);
@@ -122,6 +126,18 @@ export default function App() {
             setLoadingStatus(`Loading pack files... (${current}/${total})`);
           }
         });
+
+        // Load and cache PMTiles file for offline support
+        setLoadingStatus('Downloading geometry tiles...');
+        const pmtilesPath = '/packs/IL_2020_webpack/geom/geometries.pmtiles';
+        const pmtilesBuffer = await loadAndCachePMTiles(pmtilesPath, (loaded, total) => {
+          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+          setLoadingStatus(`Downloading geometry tiles... ${percent}%`);
+        });
+
+        // Set the buffer in the fetch interceptor so it can serve cached tiles
+        setPMTilesBuffer(pmtilesBuffer);
+        setPmtilesBufferReady(true);
 
         setLoadingStatus('Initializing map...');
 
@@ -205,12 +221,10 @@ export default function App() {
           }
           
           indexMaps[layerName] = indexToGeoId;
-          console.log(`Loaded ${layerName}: ${Object.keys(indexToGeoId).length} features`);
         }
         
         partisanLeanRef.current = leanData;
         geoIdByIndexRef.current = indexMaps;
-        console.log(`Total partisan lean data: ${Object.keys(leanData).length} features`);
       } catch (err) {
         console.error('Failed to load partisan data:', err);
       }
@@ -218,6 +232,143 @@ export default function App() {
     
     loadPartisanData();
   }, [mapData]);
+
+  // Handle visualization mode changes
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has('all')) {
+      return;
+    }
+    
+    const map = mapRef.current;
+    const sourceId = 'units-all';
+    const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
+    
+    if (visualizationMode === 'partisan') {
+      // Update paint style to use partisan lean colors
+      const partisanPaint: any = [
+        'interpolate',
+        ['linear'],
+        ['feature-state', 'partisanLean'],
+        -1, '#ff0000',    // 100% Republican = red
+        -0.5, '#ff8080',  // 75% Republican = light red
+        0, '#e8e8e8',     // 50-50 = light gray
+        0.5, '#8080ff',   // 75% Democrat = light blue
+        1, '#0000ff'      // 100% Democrat = blue
+      ];
+      
+      // Apply partisan paint to all layers
+      for (const layerName of allLayers) {
+        const fillLayerId = `units-${layerName}-fill`;
+        const layer = map.getLayer(fillLayerId);
+        
+        if (layer) {
+          map.setPaintProperty(fillLayerId, 'fill-color', partisanPaint);
+        }
+      }
+      
+      // Update feature-state for all visible features with partisan lean
+      const updatePartisanStates = () => {
+        let updatedCount = 0;
+        
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          const layer = map.getLayer(fillLayerId);
+          
+          if (!layer) continue;
+          
+          const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+          const indexMap = geoIdByIndexRef.current[layerName];
+          if (!indexMap) continue;
+          
+          for (const feature of features) {
+            const featureId = feature.id;
+            const index = feature.properties?.index;
+            
+            if (!index) continue;
+            
+            // Look up geo_id using the index
+            const geoId = indexMap[parseInt(index)];
+            if (!geoId) continue;
+            
+            // Look up lean using the geo_id
+            const lean = partisanLeanRef.current[String(geoId)];
+            
+            if (lean !== undefined) {
+              try {
+                map.setFeatureState(
+                  { source: sourceId, sourceLayer: layerName, id: featureId },
+                  { partisanLean: lean }
+                );
+                updatedCount++;
+              } catch (err) {
+                console.error(`Error setting feature state:`, err);
+              }
+            }
+          }
+        }
+      };
+      
+      // Wait a moment for map to be ready, then update
+      setTimeout(updatePartisanStates, 100);
+      
+      // Update on map move/zoom
+      map.on('moveend', updatePartisanStates);
+
+      return () => {
+        map.off('moveend', updatePartisanStates);
+      };
+    } else {
+      // Switch back to district mode
+      // Define district paint style
+      const districtPaint: any = [
+        'match',
+        ['feature-state', 'district'],
+        1, 'hsl(57 70% 50%)',
+        2, 'hsl(114 70% 50%)',
+        3, 'hsl(171 70% 50%)',
+        4, 'hsl(228 70% 50%)',
+        5, 'hsl(285 70% 50%)',
+        6, 'hsl(342 70% 50%)',
+        7, 'hsl(39 70% 50%)',
+        8, 'hsl(96 70% 50%)',
+        9, 'hsl(153 70% 50%)',
+        10, 'hsl(210 70% 50%)',
+        'rgba(0,0,0,0)'
+      ];
+      
+      // Apply district paint to all layers
+      for (const layerName of allLayers) {
+        const fillLayerId = `units-${layerName}-fill`;
+        const layer = map.getLayer(fillLayerId);
+        
+        if (layer) {
+          map.setPaintProperty(fillLayerId, 'fill-color', districtPaint);
+        }
+      }
+      
+      // Clear partisan lean feature-state
+      const clearPartisanStates = () => {
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          if (!map.getLayer(fillLayerId)) continue;
+          
+          const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+          
+          for (const feature of features) {
+            const featureId = feature.id;
+            if (!featureId) continue;
+            
+            map.setFeatureState(
+              { source: sourceId, sourceLayer: layerName, id: featureId },
+              { partisanLean: null }
+            );
+          }
+        }
+      };
+      
+      clearPartisanStates();
+    }
+  }, [visualizationMode, mapInitialized]);
 
   // Create plan from WASM when mapData and numDistricts are available
   useEffect(() => {
@@ -300,6 +451,7 @@ export default function App() {
   useEffect(() => {
     if (!mapDivRef.current || mapRef.current) return;
 
+    // Set up PMTiles protocol handler FIRST, before creating the map
     setupPmtilesProtocol();
 
     const map = new maplibregl.Map({
@@ -318,9 +470,8 @@ export default function App() {
         const zoom = map.getZoom();
         const newLayer = getLayerForZoom(zoom);
         const previousLayer = previousLayerRef.current;
-        
+
         if (newLayer !== previousLayer) {
-          console.log(`Layer changed from ${previousLayer} to ${newLayer} at zoom ${zoom}`);
           previousLayerRef.current = newLayer;
           activeLayerRef.current = newLayer;
           
@@ -366,20 +517,19 @@ export default function App() {
 
   // Set up PMTiles vector tile source
   useEffect(() => {
-    if (!mapRef.current || !mapInitialized) return;
+    if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
     
     const map = mapRef.current;
     const sourceId = 'units-all';
 
     if (!loadedSourcesRef.current.has('all')) {
-      const pmtilesPath = `/packs/IL_2020_webpack/geom/geometries.pmtiles`;
-      console.log(`Loading multi-layer PMTiles source`);
+      const pmtilesUrl = `pmtiles:///packs/IL_2020_webpack/geom/geometries.pmtiles`;
       setLoadingStatus(`Loading geometry layers...`);
-      
+
       try {
         map.addSource(sourceId, {
           type: 'vector',
-          url: `pmtiles://${pmtilesPath}`,
+          url: pmtilesUrl,
           scheme: 'xyz',
           bounds: [-91.5, 36.9, -87.0, 42.5],
         } as any);
@@ -458,27 +608,36 @@ export default function App() {
             }
           });
         }
+        
+        // Set initial layer visibility
+        const initialLayer = getLayerForZoom(map.getZoom());
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          const lineLayerId = `units-${layerName}-line`;
+          const visibility = layerName === initialLayer ? 'visible' : 'none';
+          map.setLayoutProperty(fillLayerId, 'visibility', visibility);
+          map.setLayoutProperty(lineLayerId, 'visibility', visibility);
+        }
 
         loadedSourcesRef.current.add('all');
 
         const source = map.getSource(sourceId) as any;
-        source.on('error', (e: any) => {
-          console.error(`PMTiles source error:`, e);
+
+        source.on('error', () => {
           setLoadingStatus(`Error loading geometry layers`);
         });
 
         source.on('data', (e: any) => {
           if (e.dataType === 'source' && e.isSourceLoaded) {
-            console.log(`Multi-layer PMTiles source loaded - all layers ready`);
             setLoadingStatus('');
           }
         });
       } catch (err) {
-        console.error(`Failed to add multi-layer PMTiles source:`, err);
+        console.error('Failed to add PMTiles source:', err);
         setLoadingStatus(`Error: Failed to load geometry layers`);
       }
     }
-  }, [mapInitialized]);
+  }, [mapInitialized, pmtilesBufferReady]);
 
   // Toggle layer visibility when currentLayer changes
   useEffect(() => {

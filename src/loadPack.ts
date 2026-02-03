@@ -1,7 +1,6 @@
 /**
  * Load pack files from the public directory.
  * Auto-detects pack format from manifest and loads appropriate file types.
- * Optimized for PMTiles webpack packs: skips geometry files (loaded by MapLibre on-demand).
  * 
  * @param packPath Path to the pack directory
  * @param onProgress Optional callback for progress updates (current, total, fileName?)
@@ -51,71 +50,35 @@ export async function loadPackFromDirectory(
     console.warn("Could not load manifest, using defaults:", err);
   }
 
-  // OPTIMIZATION: For PMTiles webpack packs, skip geometry files (loaded by MapLibre on-demand)
-  // But still load all data files needed by WASM
-  const isPmtilesPack = geomExt === "pmtiles";
-  
+  // Load all pack files in parallel with priority for essential files
+  // Load data files first (needed for map initialization), then geometry, then adjacencies
   const loadPromises: Array<{ fileName: string; promise: Promise<[string, Uint8Array] | null> }> = [];
   
-  if (isPmtilesPack) {
-    // For PMTiles webpack packs: load all data files (WASM needs them), skip geometry
-    const priorityOrder = [
-      { dir: "data", ext: dataExt },
-      // Skip geometry - MapLibre loads PMTiles directly
-      // Load hull and adjacency files (WASM may need them)
-      { dir: "hull", ext: hullExt },
-      { dir: "adj", ext: "csr.bin" },
-    ];
+  // Priority order: data files first (needed for initialization), then geometry, then adjacencies
+  const priorityOrder = [
+    { dir: "data", ext: dataExt },
+    { dir: "geom", ext: geomExt },
+    { dir: "hull", ext: hullExt },
+    { dir: "adj", ext: "csr.bin" },
+  ];
 
-    for (const fileType of priorityOrder) {
-      for (const layer of layers) {
-        const fileName = `${fileType.dir}/${layer}.${fileType.ext}`;
-        const filePath = `${packPath}/${fileName}`;
-        
-        const promise = fetch(filePath)
-          .then(async (response) => {
-            if (!response.ok) {
-              // Some files might not exist (e.g., state layer has no adj file)
-              console.warn(`File not found: ${fileName}`);
-              return null;
-            }
-            const arrayBuffer = await response.arrayBuffer();
-            return [fileName, new Uint8Array(arrayBuffer)] as [string, Uint8Array];
-          })
-          .catch((err) => {
-            console.warn(`Failed to load ${fileName}:`, err);
+  for (const fileType of priorityOrder) {
+    for (const layer of layers) {
+      const fileName = `${fileType.dir}/${layer}.${fileType.ext}`;
+      const filePath = `${packPath}/${fileName}`;
+      
+      const promise = fetch(filePath)
+        .then(async (response) => {
+          if (!response.ok) {
+            // Some files might not exist (e.g., state layer has no adj file)
             return null;
-          });
-        
-        loadPromises.push({ fileName, promise });
-      }
-    }
-  } else {
-    // For non-PMTiles packs: load all files as before (backward compatibility)
-    const priorityOrder = [
-      { dir: "data", ext: dataExt },
-      { dir: "geom", ext: geomExt },
-      { dir: "hull", ext: hullExt },
-      { dir: "adj", ext: "csr.bin" },
-    ];
-
-    for (const fileType of priorityOrder) {
-      for (const layer of layers) {
-        const fileName = `${fileType.dir}/${layer}.${fileType.ext}`;
-        const filePath = `${packPath}/${fileName}`;
-        
-        const promise = fetch(filePath)
-          .then(async (response) => {
-            if (!response.ok) {
-              return null;
-            }
+          }
             const arrayBuffer = await response.arrayBuffer();
             return [fileName, new Uint8Array(arrayBuffer)] as [string, Uint8Array];
-          })
-          .catch(() => null);
-        
-        loadPromises.push({ fileName, promise });
-      }
+        })
+        .catch(() => null); // Ignore missing files
+      
+      loadPromises.push({ fileName, promise });
     }
   }
 
@@ -154,3 +117,4 @@ export async function loadPackFromDirectory(
   
   return files;
 }
+
