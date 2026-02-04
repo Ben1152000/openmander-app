@@ -466,6 +466,7 @@ export default function App() {
           activeLayerRef.current = newLayer;
 
           const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
+
           for (const layerName of allLayers) {
             const fillLayerId = `units-${layerName}-fill`;
             const lineLayerId = `units-${layerName}-line`;
