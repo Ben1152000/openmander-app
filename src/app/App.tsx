@@ -66,6 +66,7 @@ export default function App() {
   
   // Visualization mode
   const [visualizationMode, setVisualizationMode] = useState<'districts' | 'partisan'>('districts');
+  const visualizationModeRef = useRef<'districts' | 'partisan'>('districts');
   const partisanLeanRef = useRef<Record<string, number>>({});
   const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
 
@@ -235,91 +236,95 @@ export default function App() {
 
   // Handle visualization mode changes
   useEffect(() => {
+    visualizationModeRef.current = visualizationMode;
+
     if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has('all')) {
       return;
     }
-    
+
     const map = mapRef.current;
     const sourceId = 'units-all';
     const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-    
+
     if (visualizationMode === 'partisan') {
-      // Update paint style to use partisan lean colors
+      // Update paint style to use partisan lean colors with fallback for unset features
       const partisanPaint: any = [
-        'interpolate',
-        ['linear'],
-        ['feature-state', 'partisanLean'],
-        -1, '#ff0000',    // 100% Republican = red
-        -0.5, '#ff8080',  // 75% Republican = light red
-        0, '#e8e8e8',     // 50-50 = light gray
-        0.5, '#8080ff',   // 75% Democrat = light blue
-        1, '#0000ff'      // 100% Democrat = blue
+        'case',
+        ['!=', ['feature-state', 'partisanLean'], null],
+        [
+          'interpolate',
+          ['linear'],
+          ['feature-state', 'partisanLean'],
+          -1, '#ff0000',    // 100% Republican = red
+          -0.5, '#ff8080',  // 75% Republican = light red
+          0, '#e8e8e8',     // 50-50 = light gray
+          0.5, '#8080ff',   // 75% Democrat = light blue
+          1, '#0000ff'      // 100% Democrat = blue
+        ],
+        '#e8e8e8'  // Fallback: neutral gray for features without data yet
       ];
-      
-      // Apply partisan paint to all layers
+
+      // Apply partisan paint to all layers and hide borders
       for (const layerName of allLayers) {
         const fillLayerId = `units-${layerName}-fill`;
-        const layer = map.getLayer(fillLayerId);
-        
-        if (layer) {
+        const lineLayerId = `units-${layerName}-line`;
+        if (map.getLayer(fillLayerId)) {
           map.setPaintProperty(fillLayerId, 'fill-color', partisanPaint);
         }
+        if (map.getLayer(lineLayerId)) {
+          map.setPaintProperty(lineLayerId, 'line-opacity', 0);
+        }
       }
-      
+
       // Update feature-state for all visible features with partisan lean
       const updatePartisanStates = () => {
-        let updatedCount = 0;
-        
         for (const layerName of allLayers) {
           const fillLayerId = `units-${layerName}-fill`;
-          const layer = map.getLayer(fillLayerId);
-          
-          if (!layer) continue;
-          
+          if (!map.getLayer(fillLayerId)) continue;
+
           const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
           const indexMap = geoIdByIndexRef.current[layerName];
           if (!indexMap) continue;
-          
+
           for (const feature of features) {
             const featureId = feature.id;
             const index = feature.properties?.index;
-            
             if (!index) continue;
-            
-            // Look up geo_id using the index
+
             const geoId = indexMap[parseInt(index)];
             if (!geoId) continue;
-            
-            // Look up lean using the geo_id
+
             const lean = partisanLeanRef.current[String(geoId)];
-            
             if (lean !== undefined) {
-              try {
-                map.setFeatureState(
-                  { source: sourceId, sourceLayer: layerName, id: featureId },
-                  { partisanLean: lean }
-                );
-                updatedCount++;
-              } catch (err) {
-                console.error(`Error setting feature state:`, err);
-              }
+              map.setFeatureState(
+                { source: sourceId, sourceLayer: layerName, id: featureId },
+                { partisanLean: lean }
+              );
             }
           }
         }
       };
-      
-      // Wait a moment for map to be ready, then update
-      setTimeout(updatePartisanStates, 100);
-      
-      // Update on map move/zoom
+
+      // Update immediately
+      updatePartisanStates();
+
+      // Update when new tiles load (sourcedata fires when tile data arrives)
+      const handleSourceData = (e: any) => {
+        if (e.sourceId === sourceId && e.isSourceLoaded) {
+          updatePartisanStates();
+        }
+      };
+
+      // Update on map move/zoom and when tiles load
       map.on('moveend', updatePartisanStates);
+      map.on('sourcedata', handleSourceData);
 
       return () => {
         map.off('moveend', updatePartisanStates);
+        map.off('sourcedata', handleSourceData);
       };
     } else {
       // Switch back to district mode
-      // Define district paint style
       const districtPaint: any = [
         'match',
         ['feature-state', 'district'],
@@ -335,38 +340,20 @@ export default function App() {
         10, 'hsl(210 70% 50%)',
         'rgba(0,0,0,0)'
       ];
-      
-      // Apply district paint to all layers
+
+      // Apply district paint to all layers and restore borders for active layer
       for (const layerName of allLayers) {
         const fillLayerId = `units-${layerName}-fill`;
-        const layer = map.getLayer(fillLayerId);
-        
-        if (layer) {
+        const lineLayerId = `units-${layerName}-line`;
+        if (map.getLayer(fillLayerId)) {
           map.setPaintProperty(fillLayerId, 'fill-color', districtPaint);
         }
-      }
-      
-      // Clear partisan lean feature-state
-      const clearPartisanStates = () => {
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          if (!map.getLayer(fillLayerId)) continue;
-          
-          const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
-          
-          for (const feature of features) {
-            const featureId = feature.id;
-            if (!featureId) continue;
-            
-            map.setFeatureState(
-              { source: sourceId, sourceLayer: layerName, id: featureId },
-              { partisanLean: null }
-            );
-          }
+        if (map.getLayer(lineLayerId)) {
+          // Restore border opacity based on current active layer
+          const lineOpacity = layerName === activeLayerRef.current ? 1 : 0;
+          map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
         }
-      };
-      
-      clearPartisanStates();
+      }
     }
   }, [visualizationMode, mapInitialized]);
 
@@ -459,6 +446,7 @@ export default function App() {
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       center: [-89.0, 40.0],
       zoom: DEFAULT_ZOOM,
+      minZoom: 4.0,
       antialias: true,
       fadeDuration: 0,
       pixelRatio: window.devicePixelRatio || 1,
@@ -466,7 +454,9 @@ export default function App() {
     mapRef.current = map;
 
     map.on('load', () => {
-      map.on('zoomend', () => {
+      // Use 'zoom' event (fires during zoom) instead of 'zoomend' (fires after)
+      // This makes layer transitions instant when crossing thresholds
+      map.on('zoom', () => {
         const zoom = map.getZoom();
         const newLayer = getLayerForZoom(zoom);
         const previousLayer = previousLayerRef.current;
@@ -474,21 +464,22 @@ export default function App() {
         if (newLayer !== previousLayer) {
           previousLayerRef.current = newLayer;
           activeLayerRef.current = newLayer;
-          
+
           const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
           for (const layerName of allLayers) {
             const fillLayerId = `units-${layerName}-fill`;
             const lineLayerId = `units-${layerName}-line`;
-            const visibility = layerName === newLayer ? 'visible' : 'none';
-            
+            const isActive = layerName === newLayer;
+
             if (map.getLayer(fillLayerId)) {
-              map.setLayoutProperty(fillLayerId, 'visibility', visibility);
+              map.setPaintProperty(fillLayerId, 'fill-opacity', isActive ? 0.7 : 0);
             }
             if (map.getLayer(lineLayerId)) {
-              map.setLayoutProperty(lineLayerId, 'visibility', visibility);
+              const lineOpacity = isActive && visualizationModeRef.current !== 'partisan' ? 1 : 0;
+              map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
             }
           }
-          
+
           setActiveLayer(newLayer);
           setCurrentLayer(newLayer);
         }
@@ -564,13 +555,16 @@ export default function App() {
               'rgba(0,0,0,0)'
             ]
           ],
-          'fill-opacity': 0.7,
+          'fill-opacity': 0,
+          'fill-opacity-transition': { duration: 0 },
           'fill-antialias': true,
         };
 
         const linePaint: any = {
           'line-width': 1.5,
           'line-color': 'rgba(0,0,0,0.4)',
+          'line-opacity': 0,
+          'line-opacity-transition': { duration: 0 },
           'line-gap-width': 0,
           'line-blur': 0.5
         };
@@ -580,20 +574,24 @@ export default function App() {
           'line-join': 'round'
         };
 
+        // Determine initial active layer
+        const initialLayer = getLayerForZoom(map.getZoom());
+
         const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
         for (const layerName of allLayers) {
           const fillLayerId = `units-${layerName}-fill`;
           const lineLayerId = `units-${layerName}-line`;
+          const isActive = layerName === initialLayer;
 
           map.addLayer({
             id: fillLayerId,
             type: 'fill',
             source: sourceId,
             'source-layer': layerName,
-            paint: fillPaint,
-            layout: {
-              visibility: 'none'
-            }
+            paint: {
+              ...fillPaint,
+              'fill-opacity': isActive ? 0.7 : 0,
+            },
           });
 
           map.addLayer({
@@ -601,22 +599,12 @@ export default function App() {
             type: 'line',
             source: sourceId,
             'source-layer': layerName,
-            paint: linePaint,
-            layout: {
-              ...lineLayout,
-              visibility: 'none'
-            }
+            paint: {
+              ...linePaint,
+              'line-opacity': isActive ? 1 : 0,
+            },
+            layout: lineLayout,
           });
-        }
-        
-        // Set initial layer visibility
-        const initialLayer = getLayerForZoom(map.getZoom());
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          const lineLayerId = `units-${layerName}-line`;
-          const visibility = layerName === initialLayer ? 'visible' : 'none';
-          map.setLayoutProperty(fillLayerId, 'visibility', visibility);
-          map.setLayoutProperty(lineLayerId, 'visibility', visibility);
         }
 
         loadedSourcesRef.current.add('all');
@@ -639,30 +627,6 @@ export default function App() {
     }
   }, [mapInitialized, pmtilesBufferReady]);
 
-  // Toggle layer visibility when currentLayer changes
-  useEffect(() => {
-    if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has('all')) return;
-
-    const map = mapRef.current;
-    const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-
-    for (const layerName of allLayers) {
-      const fillLayerId = `units-${layerName}-fill`;
-      const lineLayerId = `units-${layerName}-line`;
-      
-      const fillLayer = map.getLayer(fillLayerId);
-      const lineLayer = map.getLayer(lineLayerId);
-      
-      const visibility = layerName === currentLayer ? 'visible' : 'none';
-      
-      if (fillLayer) {
-        map.setLayoutProperty(fillLayerId, 'visibility', visibility);
-      }
-      if (lineLayer) {
-        map.setLayoutProperty(lineLayerId, 'visibility', visibility);
-      }
-    }
-  }, [currentLayer, mapInitialized]);
 
   // Set up map event handlers for paint mode
   useEffect(() => {
