@@ -313,6 +313,13 @@ export function SidePanel(props: SidePanelProps) {
                     <Label>Visualization:</Label>
                     <div className="flex gap-1">
                       <Button
+                        variant={visualizationMode === 'default' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => onVisualizationModeChange('default')}
+                      >
+                        Default
+                      </Button>
+                      <Button
                         variant={visualizationMode === 'districts' ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => onVisualizationModeChange('districts')}

@@ -9,6 +9,68 @@ import { MapViewer } from '@/app/components/MapViewer';
 import '@/App.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+// WKB to GeoJSON parser for MultiPolygon
+function parseWkbMultiPolygon(wkb: Uint8Array): GeoJSON.MultiPolygon | null {
+  if (wkb.length < 9) return null;
+
+  const view = new DataView(wkb.buffer, wkb.byteOffset, wkb.byteLength);
+  let offset = 0;
+
+  // Byte order (1 = little endian)
+  const byteOrder = wkb[offset++];
+  const isLittleEndian = byteOrder === 1;
+
+  const readUint32 = () => {
+    const val = isLittleEndian ? view.getUint32(offset, true) : view.getUint32(offset, false);
+    offset += 4;
+    return val;
+  };
+
+  const readFloat64 = () => {
+    const val = isLittleEndian ? view.getFloat64(offset, true) : view.getFloat64(offset, false);
+    offset += 8;
+    return val;
+  };
+
+  // Geometry type (6 = MultiPolygon)
+  const geomType = readUint32();
+  if (geomType !== 6) return null;
+
+  // Number of polygons
+  const numPolygons = readUint32();
+  const polygons: GeoJSON.Position[][][] = [];
+
+  for (let p = 0; p < numPolygons; p++) {
+    // Each polygon has its own header
+    offset++; // byte order
+    const polyType = readUint32();
+    if (polyType !== 3) continue; // Not a polygon
+
+    const numRings = readUint32();
+    const rings: GeoJSON.Position[][] = [];
+
+    for (let r = 0; r < numRings; r++) {
+      const numPoints = readUint32();
+      const ring: GeoJSON.Position[] = [];
+
+      for (let i = 0; i < numPoints; i++) {
+        const x = readFloat64();
+        const y = readFloat64();
+        ring.push([x, y]);
+      }
+
+      rings.push(ring);
+    }
+
+    polygons.push(rings);
+  }
+
+  return {
+    type: 'MultiPolygon',
+    coordinates: polygons
+  };
+}
+
 // PMTiles protocol handler - set up once
 let pmtilesProtocolSetup = false;
 
@@ -65,10 +127,16 @@ export default function App() {
   const [districtCounts, setDistrictCounts] = useState<Record<number, number>>({});
   
   // Visualization mode
-  const [visualizationMode, setVisualizationMode] = useState<'districts' | 'partisan'>('districts');
-  const visualizationModeRef = useRef<'districts' | 'partisan'>('districts');
+  const [visualizationMode, setVisualizationMode] = useState<'default' | 'districts' | 'partisan'>('default');
+  const visualizationModeRef = useRef<'default' | 'districts' | 'partisan'>('default');
   const partisanLeanRef = useRef<Record<string, number>>({});
   const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
+  const districtLayersAddedRef = useRef<boolean>(false);
+
+  // Cached district geometries
+  const [districtGeoJson, setDistrictGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [computingDistricts, setComputingDistricts] = useState(false);
+  const districtPlanVersionRef = useRef<number>(-1);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'debug'>('summary');
@@ -234,6 +302,77 @@ export default function App() {
     loadPartisanData();
   }, [mapData]);
 
+  // Compute district geometries when explicitly requested (not automatically)
+  const computeDistrictGeometries = async () => {
+    if (!plan || computingDistricts) return;
+
+    setComputingDistricts(true);
+    setLoadingStatus('Computing district geometries...');
+
+    // Yield to browser to update UI before blocking WASM call
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    try {
+      const districtColors = [
+        'hsl(57 70% 50%)',
+        'hsl(114 70% 50%)',
+        'hsl(171 70% 50%)',
+        'hsl(228 70% 50%)',
+        'hsl(285 70% 50%)',
+        'hsl(342 70% 50%)',
+        'hsl(39 70% 50%)',
+        'hsl(96 70% 50%)',
+        'hsl(153 70% 50%)',
+        'hsl(210 70% 50%)',
+      ];
+
+      const geometries = plan.district_geometries_wkb();
+      const features: GeoJSON.Feature[] = [];
+
+      for (const { district, wkb } of geometries) {
+        const multiPolygon = parseWkbMultiPolygon(wkb);
+        if (multiPolygon && multiPolygon.coordinates.length > 0) {
+          features.push({
+            type: 'Feature',
+            properties: {
+              district: district,
+              color: districtColors[(district - 1) % districtColors.length]
+            },
+            geometry: multiPolygon
+          });
+        }
+      }
+
+      const geojson: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features
+      };
+
+      setDistrictGeoJson(geojson);
+      districtPlanVersionRef.current = planUpdateTrigger;
+    } catch (err) {
+      console.error('Failed to compute district geometries:', err);
+      setDistrictGeoJson(null);
+    } finally {
+      setComputingDistricts(false);
+      setLoadingStatus('');
+    }
+  };
+
+  // Invalidate district geometry cache when plan changes
+  useEffect(() => {
+    if (planUpdateTrigger !== districtPlanVersionRef.current) {
+      setDistrictGeoJson(null);
+    }
+  }, [planUpdateTrigger]);
+
+  // Automatically compute when switching to districts mode if not yet computed for current plan
+  useEffect(() => {
+    if (visualizationMode === 'districts' && plan && !districtGeoJson && !computingDistricts) {
+      computeDistrictGeometries();
+    }
+  }, [visualizationMode, plan, districtGeoJson, computingDistricts]);
+
   // Handle visualization mode changes
   useEffect(() => {
     visualizationModeRef.current = visualizationMode;
@@ -245,9 +384,90 @@ export default function App() {
     const map = mapRef.current;
     const sourceId = 'units-all';
     const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
+    const districtSourceId = 'district-boundaries';
 
-    if (visualizationMode === 'partisan') {
-      // Update paint style to use partisan lean colors with fallback for unset features
+    // Helper to remove district overlay layers
+    const removeDistrictOverlay = () => {
+      if (map.getLayer('district-boundaries-fill')) {
+        map.removeLayer('district-boundaries-fill');
+      }
+      if (map.getLayer('district-boundaries-line')) {
+        map.removeLayer('district-boundaries-line');
+      }
+      if (map.getSource(districtSourceId)) {
+        map.removeSource(districtSourceId);
+      }
+      districtLayersAddedRef.current = false;
+    };
+
+    if (visualizationMode === 'default') {
+      // Default mode: transparent fills with borders, no district coloring
+      removeDistrictOverlay();
+
+      for (const layerName of allLayers) {
+        const fillLayerId = `units-${layerName}-fill`;
+        const lineLayerId = `units-${layerName}-line`;
+        if (map.getLayer(fillLayerId)) {
+          map.setPaintProperty(fillLayerId, 'fill-color', 'rgba(200, 200, 200, 0.3)');
+        }
+        if (map.getLayer(lineLayerId)) {
+          const lineOpacity = layerName === activeLayerRef.current ? 1 : 0;
+          map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
+        }
+      }
+    } else if (visualizationMode === 'districts') {
+      // Districts mode: show district WKB geometries as overlay
+      // First set base layers to light transparent
+      for (const layerName of allLayers) {
+        const fillLayerId = `units-${layerName}-fill`;
+        const lineLayerId = `units-${layerName}-line`;
+        if (map.getLayer(fillLayerId)) {
+          map.setPaintProperty(fillLayerId, 'fill-color', 'rgba(200, 200, 200, 0.2)');
+        }
+        if (map.getLayer(lineLayerId)) {
+          const lineOpacity = layerName === activeLayerRef.current ? 0.3 : 0;
+          map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
+        }
+      }
+
+      // Add district overlay using cached geometries
+      if (districtGeoJson && districtGeoJson.features.length > 0) {
+        // Remove existing district layers first
+        removeDistrictOverlay();
+
+        // Add new source and layers
+        map.addSource(districtSourceId, {
+          type: 'geojson',
+          data: districtGeoJson
+        });
+
+        map.addLayer({
+          id: 'district-boundaries-fill',
+          type: 'fill',
+          source: districtSourceId,
+          paint: {
+            'fill-color': ['get', 'color'],
+            'fill-opacity': 0.5
+          }
+          });
+
+          map.addLayer({
+            id: 'district-boundaries-line',
+            type: 'line',
+            source: districtSourceId,
+            paint: {
+              'line-color': '#000',
+              'line-width': 2,
+              'line-opacity': 0.8
+            }
+          });
+
+          districtLayersAddedRef.current = true;
+      }
+    } else if (visualizationMode === 'partisan') {
+      // Partisan mode: remove district overlay and show partisan lean colors
+      removeDistrictOverlay();
+
       const partisanPaint: any = [
         'case',
         ['!=', ['feature-state', 'partisanLean'], null],
@@ -255,16 +475,15 @@ export default function App() {
           'interpolate',
           ['linear'],
           ['feature-state', 'partisanLean'],
-          -1, '#ff0000',    // 100% Republican = red
-          -0.5, '#ff8080',  // 75% Republican = light red
-          0, '#e8e8e8',     // 50-50 = light gray
-          0.5, '#8080ff',   // 75% Democrat = light blue
-          1, '#0000ff'      // 100% Democrat = blue
+          -1, '#ff0000',
+          -0.5, '#ff8080',
+          0, '#e8e8e8',
+          0.5, '#8080ff',
+          1, '#0000ff'
         ],
-        '#e8e8e8'  // Fallback: neutral gray for features without data yet
+        '#e8e8e8'
       ];
 
-      // Apply partisan paint to all layers and hide borders
       for (const layerName of allLayers) {
         const fillLayerId = `units-${layerName}-fill`;
         const lineLayerId = `units-${layerName}-line`;
@@ -276,7 +495,6 @@ export default function App() {
         }
       }
 
-      // Update feature-state for all visible features with partisan lean
       const updatePartisanStates = () => {
         for (const layerName of allLayers) {
           const fillLayerId = `units-${layerName}-fill`;
@@ -305,17 +523,14 @@ export default function App() {
         }
       };
 
-      // Update immediately
       updatePartisanStates();
 
-      // Update when new tiles load (sourcedata fires when tile data arrives)
       const handleSourceData = (e: any) => {
         if (e.sourceId === sourceId && e.isSourceLoaded) {
           updatePartisanStates();
         }
       };
 
-      // Update on map move/zoom and when tiles load
       map.on('moveend', updatePartisanStates);
       map.on('sourcedata', handleSourceData);
 
@@ -323,39 +538,8 @@ export default function App() {
         map.off('moveend', updatePartisanStates);
         map.off('sourcedata', handleSourceData);
       };
-    } else {
-      // Switch back to district mode
-      const districtPaint: any = [
-        'match',
-        ['feature-state', 'district'],
-        1, 'hsl(57 70% 50%)',
-        2, 'hsl(114 70% 50%)',
-        3, 'hsl(171 70% 50%)',
-        4, 'hsl(228 70% 50%)',
-        5, 'hsl(285 70% 50%)',
-        6, 'hsl(342 70% 50%)',
-        7, 'hsl(39 70% 50%)',
-        8, 'hsl(96 70% 50%)',
-        9, 'hsl(153 70% 50%)',
-        10, 'hsl(210 70% 50%)',
-        'rgba(0,0,0,0)'
-      ];
-
-      // Apply district paint to all layers and restore borders for active layer
-      for (const layerName of allLayers) {
-        const fillLayerId = `units-${layerName}-fill`;
-        const lineLayerId = `units-${layerName}-line`;
-        if (map.getLayer(fillLayerId)) {
-          map.setPaintProperty(fillLayerId, 'fill-color', districtPaint);
-        }
-        if (map.getLayer(lineLayerId)) {
-          // Restore border opacity based on current active layer
-          const lineOpacity = layerName === activeLayerRef.current ? 1 : 0;
-          map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
-        }
-      }
     }
-  }, [visualizationMode, mapInitialized]);
+  }, [visualizationMode, mapInitialized, districtGeoJson]);
 
   // Create plan from WASM when mapData and numDistricts are available
   useEffect(() => {
@@ -704,7 +888,7 @@ export default function App() {
           paintMode={paintMode}
           onPaintModeChange={setPaintMode}
           visualizationMode={visualizationMode}
-          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'partisan')}
+          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'default' | 'districts' | 'partisan')}
           districtCounts={districtCounts}
           onRandomize={handleRandomize}
           onOptimize={handleOptimize}
