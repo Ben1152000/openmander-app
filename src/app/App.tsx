@@ -447,7 +447,7 @@ export default function App() {
           source: districtSourceId,
           paint: {
             'fill-color': ['get', 'color'],
-            'fill-opacity': 0.5
+            'fill-opacity': 0.3
           }
           });
 
@@ -456,9 +456,9 @@ export default function App() {
             type: 'line',
             source: districtSourceId,
             paint: {
-              'line-color': '#000',
-              'line-width': 2,
-              'line-opacity': 0.8
+              'line-color': ['get', 'color'],
+              'line-width': 3,
+              'line-opacity': 1.0
             }
           });
 
