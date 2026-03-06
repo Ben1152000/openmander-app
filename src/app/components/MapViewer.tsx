@@ -21,16 +21,16 @@ export function MapViewer(props: MapViewerProps) {
       <div ref={mapDivRef} className="h-full w-full" />
       
       {/* Loading indicator overlay */}
-      {loadingPack && (
+      {(loadingPack || !!loadingStatus) && (
         <div
           className="absolute top-4 left-4 bg-background/95 border rounded-lg shadow-lg p-4 flex items-center gap-3 z-[1000] min-w-[200px]"
         >
           <div className="loading-spinner" />
           <div>
             <div className="font-medium text-sm">
-              {loadingPack ? 'Loading map...' : 'Loading...'}
+              {loadingPack ? 'Loading map...' : loadingStatus}
             </div>
-            {loadingStatus && (
+            {loadingPack && loadingStatus && (
               <div className="text-xs text-muted-foreground mt-1">
                 {loadingStatus}
               </div>

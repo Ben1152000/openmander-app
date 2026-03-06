@@ -545,17 +545,25 @@ export default function App() {
   useEffect(() => {
     if (!wasm || !mapData?.wasmMap || !numDistricts) return;
 
-    setLoadingStatus('Creating plan...');
-    try {
-      const { WasmPlan } = wasm as any;
-      const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
-      newPlan.randomize();
-      setPlan(newPlan);
-      setLoadingStatus('');
-    } catch (err) {
-      console.error('Failed to create plan:', err);
-      setLoadingStatus('Error creating plan');
-    }
+    let cancelled = false;
+    const run = async () => {
+      setLoadingStatus('Creating plan...');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (cancelled) return;
+      try {
+        const { WasmPlan } = wasm as any;
+        const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
+        newPlan.randomize();
+        setPlan(newPlan);
+        setPlanUpdateTrigger((prev) => prev + 1);
+        setLoadingStatus('');
+      } catch (err) {
+        console.error('Failed to create plan:', err);
+        setLoadingStatus('Error creating plan');
+      }
+    };
+    run();
+    return () => { cancelled = true; };
   }, [wasm, mapData, numDistricts]);
 
   // Update assignments ref when plan changes
@@ -597,6 +605,13 @@ export default function App() {
     } catch (err) {
       console.error('Failed to optimize plan:', err);
     }
+  };
+
+  const handleLoadMap = (districts: number) => {
+    assignmentsRef.current = {};
+    setDistrictCounts({});
+    setLoadingStatus('Creating plan...');
+    setNumDistricts(districts);
   };
 
   const handleClearAssignments = () => {
@@ -883,6 +898,7 @@ export default function App() {
           onTabChange={setActiveTab}
           numDistricts={numDistricts}
           onNumDistrictsChange={setNumDistricts}
+          onLoadMap={handleLoadMap}
           activeDistrict={activeDistrict}
           onActiveDistrictChange={setActiveDistrict}
           paintMode={paintMode}

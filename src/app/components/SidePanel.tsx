@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -8,6 +9,7 @@ interface SidePanelProps {
   onTabChange: (tab: 'summary' | 'districts' | 'automation' | 'debug') => void;
   numDistricts: number;
   onNumDistrictsChange: (n: number) => void;
+  onLoadMap?: (districts: number) => void;
   activeDistrict: number;
   onActiveDistrictChange: (n: number) => void;
   paintMode: boolean;
@@ -37,7 +39,7 @@ export function SidePanel(props: SidePanelProps) {
     activeTab,
     onTabChange,
     numDistricts,
-    onNumDistrictsChange,
+    onLoadMap,
     activeDistrict,
     onActiveDistrictChange,
     paintMode,
@@ -54,6 +56,18 @@ export function SidePanel(props: SidePanelProps) {
     currentLayer,
     loadingStatus,
   } = props;
+
+  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(numDistricts));
+  const shiftHeldOnSpinner = useRef(false);
+
+  const districtsError = (() => {
+    const trimmed = pendingDistrictsRaw.trim();
+    if (trimmed === '') return 'Required';
+    if (!/^\d+$/.test(trimmed)) return 'Must be a whole number';
+    const n = parseInt(trimmed, 10);
+    if (n < 1 || n > 1000) return 'Must be between 1 and 1000';
+    return null;
+  })();
 
   return (
     <div className="h-full bg-background border-r flex flex-col">
@@ -111,19 +125,112 @@ export function SidePanel(props: SidePanelProps) {
         <div className="p-6 space-y-6">
           {activeTab === 'summary' && (
             <>
-              <div>
-                <Label htmlFor="state-select">State</Label>
-                <select
-                  id="state-select"
-                  className="mt-2 flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="illinois">Illinois</option>
-                  <option value="pennsylvania">Pennsylvania</option>
-                  <option value="ohio">Ohio</option>
-                  <option value="michigan">Michigan</option>
-                  <option value="wisconsin">Wisconsin</option>
-                </select>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <Label htmlFor="state-select">State</Label>
+                  <select
+                    id="state-select"
+                    defaultValue="illinois"
+                    className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
+                  >
+                    <option value="alabama" disabled>Alabama</option>
+                    <option value="arizona" disabled>Arizona</option>
+                    <option value="arkansas" disabled>Arkansas</option>
+                    <option value="california" disabled>California</option>
+                    <option value="colorado" disabled>Colorado</option>
+                    <option value="connecticut" disabled>Connecticut</option>
+                    <option value="delaware" disabled>Delaware</option>
+                    <option value="florida" disabled>Florida</option>
+                    <option value="georgia" disabled>Georgia</option>
+                    <option value="idaho" disabled>Idaho</option>
+                    <option value="illinois">Illinois</option>
+                    <option value="indiana" disabled>Indiana</option>
+                    <option value="iowa" disabled>Iowa</option>
+                    <option value="kansas" disabled>Kansas</option>
+                    <option value="kentucky" disabled>Kentucky</option>
+                    <option value="louisiana" disabled>Louisiana</option>
+                    <option value="maine" disabled>Maine</option>
+                    <option value="maryland" disabled>Maryland</option>
+                    <option value="massachusetts" disabled>Massachusetts</option>
+                    <option value="michigan" disabled>Michigan</option>
+                    <option value="minnesota" disabled>Minnesota</option>
+                    <option value="mississippi" disabled>Mississippi</option>
+                    <option value="missouri" disabled>Missouri</option>
+                    <option value="montana" disabled>Montana</option>
+                    <option value="nebraska" disabled>Nebraska</option>
+                    <option value="nevada" disabled>Nevada</option>
+                    <option value="new-hampshire" disabled>New Hampshire</option>
+                    <option value="new-jersey" disabled>New Jersey</option>
+                    <option value="new-mexico" disabled>New Mexico</option>
+                    <option value="new-york" disabled>New York</option>
+                    <option value="north-carolina" disabled>North Carolina</option>
+                    <option value="north-dakota" disabled>North Dakota</option>
+                    <option value="ohio" disabled>Ohio</option>
+                    <option value="oklahoma" disabled>Oklahoma</option>
+                    <option value="oregon" disabled>Oregon</option>
+                    <option value="pennsylvania" disabled>Pennsylvania</option>
+                    <option value="rhode-island" disabled>Rhode Island</option>
+                    <option value="south-carolina" disabled>South Carolina</option>
+                    <option value="south-dakota" disabled>South Dakota</option>
+                    <option value="tennessee" disabled>Tennessee</option>
+                    <option value="texas" disabled>Texas</option>
+                    <option value="utah" disabled>Utah</option>
+                    <option value="vermont" disabled>Vermont</option>
+                    <option value="virginia" disabled>Virginia</option>
+                    <option value="washington" disabled>Washington</option>
+                    <option value="west-virginia" disabled>West Virginia</option>
+                    <option value="wisconsin" disabled>Wisconsin</option>
+                    <option value="wyoming" disabled>Wyoming</option>
+                  </select>
+                </div>
+                <div className="w-32">
+                  <Label htmlFor="num-districts-select">Districts</Label>
+                  <input
+                    id="num-districts-select"
+                    type="number"
+                    value={pendingDistrictsRaw}
+                    min={1}
+                    max={1000}
+                    onMouseDown={(e) => { shiftHeldOnSpinner.current = e.shiftKey; }}
+                    onKeyDown={(e) => {
+                      if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                        e.preventDefault();
+                        const prev = parseInt(pendingDistrictsRaw, 10);
+                        if (!isNaN(prev)) {
+                          const dir = e.key === 'ArrowUp' ? 1 : -1;
+                          setPendingDistrictsRaw(String(Math.min(1000, Math.max(1, prev + dir * 10))));
+                        }
+                      }
+                    }}
+                    onChange={(e) => {
+                      if (shiftHeldOnSpinner.current) {
+                        shiftHeldOnSpinner.current = false;
+                        const prev = parseInt(pendingDistrictsRaw, 10);
+                        const next = parseInt(e.target.value, 10);
+                        if (!isNaN(prev) && !isNaN(next) && prev !== next) {
+                          const dir = next > prev ? 1 : -1;
+                          setPendingDistrictsRaw(String(Math.min(1000, Math.max(1, prev + dir * 10))));
+                          return;
+                        }
+                      }
+                      setPendingDistrictsRaw(e.target.value);
+                    }}
+                    className={`mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors ${districtsError ? 'border-destructive focus-visible:border-destructive' : 'border-input focus-visible:border-primary'}`}
+                  />
+                </div>
               </div>
+
+              {districtsError && (
+                <p className="text-xs text-destructive -mt-4">{districtsError}</p>
+              )}
+
+              <Button
+                className="w-full"
+                disabled={!!districtsError}
+                onClick={() => onLoadMap?.(parseInt(pendingDistrictsRaw, 10))}
+              >
+                Load Map
+              </Button>
 
               <Card>
                 <CardHeader className="pb-3">
@@ -273,19 +380,6 @@ export function SidePanel(props: SidePanelProps) {
               <div>
                 <h3 className="text-sm font-medium mb-2">Settings</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="num-districts">Districts:</Label>
-                    <input
-                      id="num-districts"
-                      type="number"
-                      value={numDistricts}
-                      min={1}
-                      max={10}
-                      onChange={(e) => onNumDistrictsChange(parseInt(e.target.value || '4', 10))}
-                      className="w-20 h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    />
-                  </div>
-
                   <div className="flex items-center gap-2">
                     <Label htmlFor="active-district">Active District:</Label>
                     <input
