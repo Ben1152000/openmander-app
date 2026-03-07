@@ -27,11 +27,11 @@ export function MapViewer(props: MapViewerProps) {
         >
           <div className="loading-spinner" />
           <div>
-            <div className="font-medium">
+            <div className="font-medium text-sm">
               {loadingPack ? 'Loading map...' : loadingStatus}
             </div>
             {loadingPack && loadingStatus && (
-              <div className="text-sm text-muted-foreground">
+              <div className="text-xs text-muted-foreground">
                 {loadingStatus}
               </div>
             )}

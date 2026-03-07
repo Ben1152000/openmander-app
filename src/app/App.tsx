@@ -71,6 +71,27 @@ function parseWkbMultiPolygon(wkb: Uint8Array): GeoJSON.MultiPolygon | null {
   };
 }
 
+export interface DistrictStat {
+  district: number;
+  color: string;
+  population: number;
+  deviation: number; // % deviation from ideal
+  partisanLean: number | null; // (dem - rep) / (dem + rep), positive = more dem
+}
+
+const DISTRICT_COLORS = [
+  'hsl(57 70% 50%)',
+  'hsl(114 70% 50%)',
+  'hsl(171 70% 50%)',
+  'hsl(228 70% 50%)',
+  'hsl(285 70% 50%)',
+  'hsl(342 70% 50%)',
+  'hsl(39 70% 50%)',
+  'hsl(96 70% 50%)',
+  'hsl(153 70% 50%)',
+  'hsl(210 70% 50%)',
+];
+
 // PMTiles protocol handler - set up once
 let pmtilesProtocolSetup = false;
 
@@ -87,7 +108,7 @@ function setupPmtilesProtocol() {
 const ZOOM_THRESHOLD_COUNTY_TO_VTD = 8;
 const ZOOM_THRESHOLD_VTD_TO_BLOCK = 12;
 const DEFAULT_ZOOM = 6;
-const DEFAULT_NUM_DISTRICTS = 4;
+const DEFAULT_NUM_DISTRICTS = 17; // Illinois congressional districts
 const DEFAULT_LAYER = 'county';
 
 interface StateConfig {
@@ -159,9 +180,12 @@ export default function App() {
   const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
   const districtLayersAddedRef = useRef<boolean>(false);
 
-  // Cached district geometries
+  // Cached district geometries and stats
   const [districtGeoJson, setDistrictGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [computingDistricts, setComputingDistricts] = useState(false);
+  const [_computingDistricts, setComputingDistricts] = useState(false);
+  const computingDistrictsRef = useRef(false);
+  const pendingComputeRef = useRef(false);
+  const [districtStats, setDistrictStats] = useState<DistrictStat[] | null>(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'debug'>('summary');
@@ -357,28 +381,19 @@ export default function App() {
 
   // Compute district geometries when explicitly requested (not automatically)
   const computeDistrictGeometries = async () => {
-    if (!plan || computingDistricts) return;
+    if (!plan) return;
 
+    // Use a ref for the guard so rapid clicks see the up-to-date value
+    // rather than stale React state.
+    if (computingDistrictsRef.current) {
+      pendingComputeRef.current = true;
+      return;
+    }
+
+    computingDistrictsRef.current = true;
     setComputingDistricts(true);
 
-    // Yield so React flushes the planUpdateTrigger invalidation effect before
-    // we set districtGeoJson — otherwise the effect fires after and clears it
-    await new Promise(resolve => setTimeout(resolve, 0));
-
     try {
-      const districtColors = [
-        'hsl(57 70% 50%)',
-        'hsl(114 70% 50%)',
-        'hsl(171 70% 50%)',
-        'hsl(228 70% 50%)',
-        'hsl(285 70% 50%)',
-        'hsl(342 70% 50%)',
-        'hsl(39 70% 50%)',
-        'hsl(96 70% 50%)',
-        'hsl(153 70% 50%)',
-        'hsl(210 70% 50%)',
-      ];
-
       const geometries = plan.district_geometries_wkb();
       const features: GeoJSON.Feature[] = [];
 
@@ -389,32 +404,72 @@ export default function App() {
             type: 'Feature',
             properties: {
               district: district,
-              color: districtColors[(district - 1) % districtColors.length]
+              color: DISTRICT_COLORS[(district - 1) % DISTRICT_COLORS.length]
             },
             geometry: multiPolygon
           });
         }
       }
 
-      const geojson: GeoJSON.FeatureCollection = {
-        type: 'FeatureCollection',
-        features
-      };
-
-      setDistrictGeoJson(geojson);
+      setDistrictGeoJson({ type: 'FeatureCollection', features });
     } catch (err) {
       console.error('Failed to compute district geometries:', err);
       setDistrictGeoJson(null);
     } finally {
-      setComputingDistricts(false);
-      setLoadingStatus('');
+      computingDistrictsRef.current = false;
+      const hasPending = pendingComputeRef.current;
+      pendingComputeRef.current = false;
+
+      if (hasPending) {
+        // Another randomize ran while we were computing — recompute with latest plan
+        computeDistrictGeometries();
+      } else {
+        setComputingDistricts(false);
+        setLoadingStatus('');
+      }
     }
   };
 
-  // Invalidate district geometry cache when plan changes
+
+  // Compute per-district stats when plan changes
   useEffect(() => {
-    setDistrictGeoJson(null);
-  }, [planUpdateTrigger]);
+    if (!plan) {
+      setDistrictStats(null);
+      return;
+    }
+    try {
+      const available: string[] = plan.series();
+      const populations: number[] = available.includes('T_20_CENS_Total')
+        ? Array.from(plan.district_totals('T_20_CENS_Total'))
+        : [];
+
+      const total = populations.reduce((a, b) => a + b, 0);
+      const ideal = populations.length > 0 ? total / populations.length : 0;
+
+      const demVotes: number[] | null = available.includes('E_20_PRES_Dem')
+        ? Array.from(plan.district_totals('E_20_PRES_Dem'))
+        : null;
+      const repVotes: number[] | null = available.includes('E_20_PRES_Rep')
+        ? Array.from(plan.district_totals('E_20_PRES_Rep'))
+        : null;
+
+      setDistrictStats(populations.map((pop, i) => {
+        const dem = demVotes?.[i] ?? 0;
+        const rep = repVotes?.[i] ?? 0;
+        const twoParty = dem + rep;
+        return {
+          district: i + 1,
+          color: DISTRICT_COLORS[i % DISTRICT_COLORS.length],
+          population: pop,
+          deviation: ideal > 0 ? ((pop - ideal) / ideal) * 100 : 0,
+          partisanLean: twoParty > 0 ? (dem - rep) / twoParty : null,
+        };
+      }));
+    } catch (err) {
+      console.error('Failed to compute district stats:', err);
+      setDistrictStats(null);
+    }
+  }, [planUpdateTrigger, plan]);
 
   // Handle visualization mode changes
   useEffect(() => {
@@ -584,6 +639,7 @@ export default function App() {
       const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
       planRef.current = newPlan;
       setPlan(newPlan);
+      setDistrictGeoJson(null);
       setPlanUpdateTrigger((prev) => prev + 1);
     } catch (err) {
       console.error('Failed to create plan:', err);
@@ -614,6 +670,7 @@ export default function App() {
   const handleRandomize = () => {
     if (!plan) return;
     setLoadingStatus('Creating plan...');
+    setDistrictGeoJson(null);
     setTimeout(() => {
       try {
         plan.randomize();
@@ -629,6 +686,7 @@ export default function App() {
   const handleOptimize = () => {
     if (!plan) return;
     setLoadingStatus('Creating plan...');
+    setDistrictGeoJson(null);
     setTimeout(() => {
       try {
         plan.tabu_balance('TOTPOP', 100, 10, 0.5, 50);
@@ -965,7 +1023,9 @@ export default function App() {
           districtCounts={districtCounts}
           onRandomize={handleRandomize}
           onOptimize={handleOptimize}
+          onRefreshDistricts={computeDistrictGeometries}
           onClearAssignments={handleClearAssignments}
+          districtStats={districtStats}
           wasmLoading={wasmLoading}
           wasmError={wasmError}
           currentZoom={currentZoom}

@@ -1,8 +1,23 @@
 import { useRef, useState } from 'react';
+
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Users, TrendingUp, AlertCircle, Play } from 'lucide-react';
+import type { DistrictStat } from '@/app/App';
+
+const STATE_DISTRICTS: Record<string, number> = {
+  alabama: 7, alaska: 1, arizona: 9, arkansas: 4, california: 52, colorado: 8,
+  connecticut: 5, delaware: 1, florida: 28, georgia: 14, hawaii: 2, idaho: 2,
+  illinois: 17, indiana: 9, iowa: 4, kansas: 4, kentucky: 6, louisiana: 6,
+  maine: 2, maryland: 8, massachusetts: 9, michigan: 13, minnesota: 8,
+  mississippi: 4, missouri: 8, montana: 2, nebraska: 3, nevada: 4,
+  'new-hampshire': 2, 'new-jersey': 12, 'new-mexico': 3, 'new-york': 26,
+  'north-carolina': 14, 'north-dakota': 1, ohio: 15, oklahoma: 5, oregon: 6,
+  pennsylvania: 17, 'rhode-island': 2, 'south-carolina': 7, 'south-dakota': 1,
+  tennessee: 9, texas: 38, utah: 4, vermont: 1, virginia: 11, washington: 10,
+  'west-virginia': 2, wisconsin: 8, wyoming: 1,
+};
 
 interface SidePanelProps {
   activeTab: 'summary' | 'districts' | 'automation' | 'debug';
@@ -20,7 +35,9 @@ interface SidePanelProps {
   districtCounts: Record<number, number>;
   onRandomize: () => void;
   onOptimize: () => void;
+  onRefreshDistricts: () => void;
   onClearAssignments: () => void;
+  districtStats: DistrictStat[] | null;
   wasmLoading: boolean;
   wasmError: Error | null;
   currentZoom: number;
@@ -28,19 +45,12 @@ interface SidePanelProps {
   loadingStatus: string;
 }
 
-const mockDistricts = [
-  { id: 1, number: 1, population: 762450, deviation: 0.2, compactness: 0.78, color: 'hsl(57 70% 50%)' },
-  { id: 2, number: 2, population: 758920, deviation: -0.3, compactness: 0.82, color: 'hsl(114 70% 50%)' },
-  { id: 3, number: 3, population: 765100, deviation: 0.5, compactness: 0.71, color: 'hsl(171 70% 50%)' },
-  { id: 4, number: 4, population: 761230, deviation: 0.1, compactness: 0.85, color: 'hsl(228 70% 50%)' },
-];
 
 export function SidePanel(props: SidePanelProps) {
   const {
     activeTab,
     onTabChange,
     numDistricts,
-    loadedState,
     onLoadMap,
     activeDistrict,
     onActiveDistrictChange,
@@ -51,7 +61,9 @@ export function SidePanel(props: SidePanelProps) {
     districtCounts,
     onRandomize,
     onOptimize,
+    onRefreshDistricts,
     onClearAssignments,
+    districtStats,
     wasmLoading,
     wasmError,
     currentZoom,
@@ -60,7 +72,7 @@ export function SidePanel(props: SidePanelProps) {
   } = props;
 
   const [pendingState, setPendingState] = useState('illinois');
-  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(numDistricts));
+  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_DISTRICTS['illinois'] ?? numDistricts));
   const shiftHeldOnSpinner = useRef(false);
   const [algorithm, setAlgorithm] = useState('random-initialization');
 
@@ -126,7 +138,59 @@ export function SidePanel(props: SidePanelProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
+        {activeTab === 'districts' && (
+          <div>
+            {!districtStats || districtStats.length === 0 ? (
+              <p className="text-sm text-muted-foreground p-6">No plan generated yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted border-b sticky top-0">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium">District</th>
+                    <th className="text-right py-2 px-3 font-medium">Population</th>
+                    <th className="text-right py-2 px-3 font-medium">Deviation</th>
+                    <th className="text-right py-2 px-3 font-medium">Partisan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {districtStats.map((d) => {
+                    const lean = d.partisanLean;
+                    const leanLabel = lean === null ? '—'
+                      : lean > 0 ? `D+${(lean * 100).toFixed(1)}%`
+                      : lean < 0 ? `R+${(-lean * 100).toFixed(1)}%`
+                      : 'Even';
+                    const leanClass = lean === null ? 'text-muted-foreground'
+                      : lean > 0 ? 'text-blue-600'
+                      : lean < 0 ? 'text-red-600'
+                      : 'text-muted-foreground';
+                    return (
+                      <tr key={d.district} className="border-b last:border-b-0 hover:bg-accent transition-colors">
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded" style={{ backgroundColor: d.color }} />
+                            <span>District {d.district}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-right text-muted-foreground">
+                          {Math.round(d.population).toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <span className={d.deviation >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {d.deviation >= 0 ? '+' : ''}{d.deviation.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className={`py-3 px-3 text-right ${leanClass}`}>
+                          {leanLabel}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+        <div className={`p-6 space-y-6 ${activeTab === 'districts' ? 'hidden' : ''}`}>
           {activeTab === 'summary' && (
             <>
               <div className="flex gap-3">
@@ -135,7 +199,12 @@ export function SidePanel(props: SidePanelProps) {
                   <select
                     id="state-select"
                     value={pendingState}
-                    onChange={(e) => setPendingState(e.target.value)}
+                    onChange={(e) => {
+                      const s = e.target.value;
+                      setPendingState(s);
+                      const d = STATE_DISTRICTS[s];
+                      if (d) setPendingDistrictsRaw(String(d));
+                    }}
                     className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
                   >
                     <option value="alabama" disabled>Alabama</option>
@@ -268,58 +337,6 @@ export function SidePanel(props: SidePanelProps) {
             </>
           )}
 
-          {activeTab === 'districts' && (
-            <div>
-              <h2 className="mb-3">Districts</h2>
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 border-b">
-                    <tr>
-                      <th className="text-left py-2 px-3 font-medium">District</th>
-                      <th className="text-right py-2 px-3 font-medium">Population</th>
-                      <th className="text-right py-2 px-3 font-medium">Deviation</th>
-                      <th className="text-right py-2 px-3 font-medium">Compact.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockDistricts.map((district) => (
-                      <tr
-                        key={district.id}
-                        className="border-b last:border-b-0 hover:bg-accent cursor-pointer transition-colors"
-                      >
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-3 h-3 rounded"
-                              style={{ backgroundColor: district.color }}
-                            />
-                            <span>District {district.number}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-right text-muted-foreground">
-                          {district.population.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          <span
-                            className={
-                              district.deviation > 0 ? 'text-green-600' : 'text-red-600'
-                            }
-                          >
-                            {district.deviation > 0 ? '+' : ''}
-                            {district.deviation}%
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-right text-muted-foreground">
-                          {district.compactness}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'automation' && (
             <div className="space-y-4">
               <div>
@@ -450,9 +467,12 @@ export function SidePanel(props: SidePanelProps) {
                 </div>
               </div>
 
-              <div>
-                <Button variant="outline" className="w-full" onClick={onClearAssignments}>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={onClearAssignments}>
                   Clear Assignments
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={onRefreshDistricts}>
+                  Refresh Districts
                 </Button>
               </div>
 
