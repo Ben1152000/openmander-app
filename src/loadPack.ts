@@ -7,10 +7,11 @@
  */
 export async function loadPackFromDirectory(
   packPath: string,
-  onProgress?: (current: number, total: number, fileName?: string) => void
+  onProgress?: (current: number, total: number, fileName?: string) => void,
+  signal?: AbortSignal,
 ): Promise<Record<string, Uint8Array>> {
   // Load manifest first — it is the source of truth for which files exist.
-  const manifestResponse = await fetch(`${packPath}/manifest.json`);
+  const manifestResponse = await fetch(`${packPath}/manifest.json`, { signal });
   if (!manifestResponse.ok) {
     throw new Error(`Failed to load manifest.json: ${manifestResponse.status} ${manifestResponse.statusText}`);
   }
@@ -30,7 +31,7 @@ export async function loadPackFromDirectory(
   const total = fileKeys.length;
 
   await Promise.all(fileKeys.map(async (fileName) => {
-    const response = await fetch(`${packPath}/${fileName}`);
+    const response = await fetch(`${packPath}/${fileName}`, { signal });
     if (!response.ok) {
       throw new Error(`Failed to fetch ${fileName}: ${response.status} ${response.statusText}`);
     }

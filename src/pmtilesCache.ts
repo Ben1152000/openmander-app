@@ -99,7 +99,8 @@ async function cacheFile(url: string, data: ArrayBuffer): Promise<void> {
  */
 async function downloadPMTilesFile(
   url: string,
-  onProgress?: (loaded: number, total: number) => void
+  onProgress?: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
   // First check cache
   const cached = await getCachedFile(url);
@@ -112,7 +113,7 @@ async function downloadPMTilesFile(
   if (!originalFetchFn) {
     throw new Error("Original fetch function not available");
   }
-  const response = await originalFetchFn(url);
+  const response = await originalFetchFn(url, { signal });
   if (!response.ok) {
     throw new Error(`Failed to download PMTiles: ${response.statusText}`);
   }
@@ -167,13 +168,14 @@ async function downloadPMTilesFile(
  */
 export async function loadAndCachePMTiles(
   pmtilesPath: string,
-  onProgress?: (loaded: number, total: number) => void
+  onProgress?: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
   // Construct full URL
   const baseUrl = window.location.origin;
   const fullUrl = `${baseUrl}${pmtilesPath}`;
 
-  return downloadPMTilesFile(fullUrl, onProgress);
+  return downloadPMTilesFile(fullUrl, onProgress, signal);
 }
 
 /**

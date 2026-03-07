@@ -90,6 +90,28 @@ const DEFAULT_ZOOM = 6;
 const DEFAULT_NUM_DISTRICTS = 4;
 const DEFAULT_LAYER = 'county';
 
+interface StateConfig {
+  packDir: string;
+  pmtilesBounds: [number, number, number, number]; // [west, south, east, north]
+  center: [number, number];
+  zoom: number;
+}
+
+const STATE_CONFIGS: Record<string, StateConfig> = {
+  illinois: {
+    packDir: 'IL_2020_webpack',
+    pmtilesBounds: [-91.5, 36.9, -87.0, 42.5],
+    center: [-89.2, 40.0],
+    zoom: 6,
+  },
+  iowa: {
+    packDir: 'IA_2020_webpack',
+    pmtilesBounds: [-96.7, 40.3, -90.1, 43.6],
+    center: [-93.5, 42.0],
+    zoom: 6.5,
+  },
+};
+
 export default function App() {
   // Resize state
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -101,8 +123,11 @@ export default function App() {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   
   const [plan, setPlan] = useState<any>(null);
+  const planRef = useRef<any>(null);
   const [mapData, setMapData] = useState<{ wasmMap?: any; wasmMapProxy?: any; packFiles?: Record<string, Uint8Array> } | null>(null);
+  const wasmMapRef = useRef<any>(null);
   const [numDistricts, setNumDistricts] = useState(DEFAULT_NUM_DISTRICTS);
+  const [loadedState, setLoadedState] = useState('illinois');
   const [mapInitialized, setMapInitialized] = useState(false);
   const [planUpdateTrigger, setPlanUpdateTrigger] = useState(0);
   
@@ -119,6 +144,7 @@ export default function App() {
   const featureHashesRef = useRef<Record<string, string>>({});
   const activeLayerRef = useRef<string>(DEFAULT_LAYER);
   const loadedSourcesRef = useRef<Set<string>>(new Set());
+  const [sourcesVersion, setSourcesVersion] = useState(0);
 
   // Assignments and painting
   const assignmentsRef = useRef<Record<string, number>>({});
@@ -127,8 +153,8 @@ export default function App() {
   const [districtCounts, setDistrictCounts] = useState<Record<number, number>>({});
   
   // Visualization mode
-  const [visualizationMode, setVisualizationMode] = useState<'default' | 'districts' | 'partisan'>('default');
-  const visualizationModeRef = useRef<'default' | 'districts' | 'partisan'>('default');
+  const [visualizationMode, setVisualizationMode] = useState<'districts' | 'partisan'>('districts');
+  const visualizationModeRef = useRef<'districts' | 'partisan'>('districts');
   const partisanLeanRef = useRef<Record<string, number>>({});
   const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
   const districtLayersAddedRef = useRef<boolean>(false);
@@ -136,7 +162,6 @@ export default function App() {
   // Cached district geometries
   const [districtGeoJson, setDistrictGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
   const [computingDistricts, setComputingDistricts] = useState(false);
-  const districtPlanVersionRef = useRef<number>(-1);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'debug'>('summary');
@@ -179,58 +204,86 @@ export default function App() {
     return 'block';
   };
 
-  // Load Illinois pmtiles pack data
+  // Load pack data for the current state
   useEffect(() => {
     if (!wasm) return;
 
-    const loadIllinoisPack = async () => {
+    const config = STATE_CONFIGS[loadedState];
+    if (!config) return;
+
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const loadPack = async () => {
+      // Free old WASM objects before loading new state, to release WASM heap memory
+      // immediately rather than waiting for JS garbage collection.
+      if (planRef.current) {
+        planRef.current.free?.();
+        planRef.current = null;
+        setPlan(null);
+      }
+      if (wasmMapRef.current) {
+        wasmMapRef.current.free?.();
+        wasmMapRef.current = null;
+      }
+
+      setPmtilesBufferReady(false);
+      setMapData(null);
       setLoadingPack(true);
       setLoadingStatus('Loading pack files...');
       try {
-        const packPath = '/packs/IL_2020_webpack';
+        const packPath = `/packs/${config.packDir}`;
         const packFiles = await loadPackFromDirectory(packPath, (current, total, fileName) => {
           if (fileName) {
             setLoadingStatus(`Loading pack files... (${current}/${total}) - ${fileName}`);
           } else {
             setLoadingStatus(`Loading pack files... (${current}/${total})`);
           }
-        });
+        }, signal);
 
-        // Load and cache PMTiles file for offline support
+        if (signal.aborted) return;
+
         setLoadingStatus('Downloading geometry tiles...');
-        const pmtilesPath = '/packs/IL_2020_webpack/geom/geometries.pmtiles';
-        const pmtilesBuffer = await loadAndCachePMTiles(pmtilesPath, (loaded, total) => {
-          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
-          setLoadingStatus(`Downloading geometry tiles... ${percent}%`);
-        });
+        const pmtilesBuffer = await loadAndCachePMTiles(
+          `${packPath}/geom/geometries.pmtiles`,
+          (loaded, total) => {
+            const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+            setLoadingStatus(`Downloading geometry tiles... ${percent}%`);
+          },
+          signal,
+        );
 
-        // Set the buffer in the fetch interceptor so it can serve cached tiles
+        if (signal.aborted) return;
+
         setPMTilesBuffer(pmtilesBuffer);
         setPmtilesBufferReady(true);
 
         setLoadingStatus('Initializing map...');
-
         await new Promise(resolve => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(resolve);
-          });
+          requestAnimationFrame(() => { requestAnimationFrame(resolve); });
         });
-        
+
+        if (signal.aborted) return;
+
         const { WasmMap } = wasm as any;
         const wasmMap = new WasmMap(packFiles);
-
+        wasmMapRef.current = wasmMap;
         setMapData({ wasmMap, packFiles });
-      } catch (err) {
-        console.error('Failed to load Illinois pmtiles pack:', err);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        console.error(`Failed to load ${loadedState} pack:`, err);
         setLoadingStatus('Error loading pack');
       } finally {
-        setLoadingPack(false);
-        setLoadingStatus('');
+        if (!signal.aborted) {
+          setLoadingPack(false);
+          setLoadingStatus('');
+        }
       }
     };
 
-    loadIllinoisPack();
-  }, [wasm]);
+    loadPack();
+    return () => controller.abort();
+  }, [wasm, loadedState]);
   
   // Load partisan lean data from CSV files
   useEffect(() => {
@@ -307,10 +360,10 @@ export default function App() {
     if (!plan || computingDistricts) return;
 
     setComputingDistricts(true);
-    setLoadingStatus('Computing district geometries...');
 
-    // Yield to browser to update UI before blocking WASM call
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Yield so React flushes the planUpdateTrigger invalidation effect before
+    // we set districtGeoJson — otherwise the effect fires after and clears it
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     try {
       const districtColors = [
@@ -349,7 +402,6 @@ export default function App() {
       };
 
       setDistrictGeoJson(geojson);
-      districtPlanVersionRef.current = planUpdateTrigger;
     } catch (err) {
       console.error('Failed to compute district geometries:', err);
       setDistrictGeoJson(null);
@@ -361,23 +413,14 @@ export default function App() {
 
   // Invalidate district geometry cache when plan changes
   useEffect(() => {
-    if (planUpdateTrigger !== districtPlanVersionRef.current) {
-      setDistrictGeoJson(null);
-    }
+    setDistrictGeoJson(null);
   }, [planUpdateTrigger]);
-
-  // Automatically compute when switching to districts mode if not yet computed for current plan
-  useEffect(() => {
-    if (visualizationMode === 'districts' && plan && !districtGeoJson && !computingDistricts) {
-      computeDistrictGeometries();
-    }
-  }, [visualizationMode, plan, districtGeoJson, computingDistricts]);
 
   // Handle visualization mode changes
   useEffect(() => {
     visualizationModeRef.current = visualizationMode;
 
-    if (!mapRef.current || !mapInitialized || !loadedSourcesRef.current.has('all')) {
+    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) {
       return;
     }
 
@@ -400,22 +443,7 @@ export default function App() {
       districtLayersAddedRef.current = false;
     };
 
-    if (visualizationMode === 'default') {
-      // Default mode: transparent fills with borders, no district coloring
-      removeDistrictOverlay();
-
-      for (const layerName of allLayers) {
-        const fillLayerId = `units-${layerName}-fill`;
-        const lineLayerId = `units-${layerName}-line`;
-        if (map.getLayer(fillLayerId)) {
-          map.setPaintProperty(fillLayerId, 'fill-color', 'rgba(200, 200, 200, 0.3)');
-        }
-        if (map.getLayer(lineLayerId)) {
-          const lineOpacity = layerName === activeLayerRef.current ? 1 : 0;
-          map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
-        }
-      }
-    } else if (visualizationMode === 'districts') {
+    if (visualizationMode === 'districts') {
       // Districts mode: show district WKB geometries as overlay
       // First set base layers to light transparent
       for (const layerName of allLayers) {
@@ -425,14 +453,13 @@ export default function App() {
           map.setPaintProperty(fillLayerId, 'fill-color', 'rgba(200, 200, 200, 0.2)');
         }
         if (map.getLayer(lineLayerId)) {
-          const lineOpacity = layerName === activeLayerRef.current ? 0.3 : 0;
+          const lineOpacity = layerName === activeLayerRef.current ? 0.5 : 0;
           map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
         }
       }
 
       // Add district overlay using cached geometries
       if (districtGeoJson && districtGeoJson.features.length > 0) {
-        // Remove existing district layers first
         removeDistrictOverlay();
 
         // Add new source and layers
@@ -449,20 +476,22 @@ export default function App() {
             'fill-color': ['get', 'color'],
             'fill-opacity': 0.3
           }
-          });
+        });
 
-          map.addLayer({
-            id: 'district-boundaries-line',
-            type: 'line',
-            source: districtSourceId,
-            paint: {
-              'line-color': ['get', 'color'],
-              'line-width': 3,
-              'line-opacity': 1.0
-            }
-          });
+        map.addLayer({
+          id: 'district-boundaries-line',
+          type: 'line',
+          source: districtSourceId,
+          paint: {
+            'line-color': '#333333',
+            'line-width': 1.5,
+            'line-opacity': 1.0
+          }
+        });
 
-          districtLayersAddedRef.current = true;
+        districtLayersAddedRef.current = true;
+      } else {
+        removeDistrictOverlay();
       }
     } else if (visualizationMode === 'partisan') {
       // Partisan mode: remove district overlay and show partisan lean colors
@@ -539,31 +568,26 @@ export default function App() {
         map.off('sourcedata', handleSourceData);
       };
     }
-  }, [visualizationMode, mapInitialized, districtGeoJson]);
+  }, [visualizationMode, mapInitialized, districtGeoJson, sourcesVersion]);
 
   // Create plan from WASM when mapData and numDistricts are available
   useEffect(() => {
     if (!wasm || !mapData?.wasmMap || !numDistricts) return;
 
-    let cancelled = false;
-    const run = async () => {
-      setLoadingStatus('Creating plan...');
-      await new Promise(resolve => setTimeout(resolve, 0));
-      if (cancelled) return;
-      try {
-        const { WasmPlan } = wasm as any;
-        const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
-        newPlan.randomize();
-        setPlan(newPlan);
-        setPlanUpdateTrigger((prev) => prev + 1);
-        setLoadingStatus('');
-      } catch (err) {
-        console.error('Failed to create plan:', err);
-        setLoadingStatus('Error creating plan');
+    try {
+      // Free old plan before creating a new one (numDistricts change)
+      if (planRef.current) {
+        planRef.current.free?.();
+        planRef.current = null;
       }
-    };
-    run();
-    return () => { cancelled = true; };
+      const { WasmPlan } = wasm as any;
+      const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
+      planRef.current = newPlan;
+      setPlan(newPlan);
+      setPlanUpdateTrigger((prev) => prev + 1);
+    } catch (err) {
+      console.error('Failed to create plan:', err);
+    }
   }, [wasm, mapData, numDistricts]);
 
   // Update assignments ref when plan changes
@@ -589,28 +613,46 @@ export default function App() {
 
   const handleRandomize = () => {
     if (!plan) return;
-    try {
-      plan.randomize();
-      setPlanUpdateTrigger((prev) => prev + 1);
-    } catch (err) {
-      console.error('Failed to randomize plan:', err);
-    }
+    setLoadingStatus('Creating plan...');
+    setTimeout(() => {
+      try {
+        plan.randomize();
+        setPlanUpdateTrigger((prev) => prev + 1);
+        computeDistrictGeometries();
+      } catch (err) {
+        console.error('Failed to randomize plan:', err);
+        setLoadingStatus('');
+      }
+    }, 0);
   };
 
   const handleOptimize = () => {
     if (!plan) return;
-    try {
-      plan.tabu_balance('TOTPOP', 100, 10, 0.5, 50);
-      setPlanUpdateTrigger((prev) => prev + 1);
-    } catch (err) {
-      console.error('Failed to optimize plan:', err);
-    }
+    setLoadingStatus('Creating plan...');
+    setTimeout(() => {
+      try {
+        plan.tabu_balance('TOTPOP', 100, 10, 0.5, 50);
+        setPlanUpdateTrigger((prev) => prev + 1);
+        computeDistrictGeometries();
+      } catch (err) {
+        console.error('Failed to optimize plan:', err);
+        setLoadingStatus('');
+      }
+    }, 0);
   };
 
-  const handleLoadMap = (districts: number) => {
+  const handleLoadMap = (state: string, districts: number) => {
+    if (state === loadedState && districts === numDistricts) return;
     assignmentsRef.current = {};
     setDistrictCounts({});
-    setLoadingStatus('Creating plan...');
+    setDistrictGeoJson(null);
+    if (state !== loadedState) {
+      // Reset pmtilesBufferReady in the same render as loadedState so the map
+      // source effect sees pmtilesBufferReady=false immediately and doesn't try
+      // to load the new state's tiles with the old state's cached buffer.
+      setPmtilesBufferReady(false);
+    }
+    setLoadedState(state);
     setNumDistricts(districts);
   };
 
@@ -643,8 +685,8 @@ export default function App() {
     const map = new maplibregl.Map({
       container: mapDivRef.current,
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-      center: [-89.0, 40.0],
-      zoom: DEFAULT_ZOOM,
+      center: STATE_CONFIGS['illinois'].center,
+      zoom: STATE_CONFIGS['illinois'].zoom,
       minZoom: 4.0,
       antialias: true,
       fadeDuration: 0,
@@ -675,7 +717,7 @@ export default function App() {
               map.setPaintProperty(fillLayerId, 'fill-opacity', isActive ? 0.7 : 0);
             }
             if (map.getLayer(lineLayerId)) {
-              const lineOpacity = isActive && visualizationModeRef.current !== 'partisan' ? 1 : 0;
+              const lineOpacity = !isActive || visualizationModeRef.current === 'partisan' ? 0 : 0.5;
               map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
             }
           }
@@ -709,12 +751,24 @@ export default function App() {
   // Set up PMTiles vector tile source
   useEffect(() => {
     if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
-    
+
+    const config = STATE_CONFIGS[loadedState];
+    if (!config) return;
+
     const map = mapRef.current;
     const sourceId = 'units-all';
+    const allLayerNames = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
 
-    if (!loadedSourcesRef.current.has('all')) {
-      const pmtilesUrl = `pmtiles:///packs/IL_2020_webpack/geom/geometries.pmtiles`;
+    // Remove existing layers and source before re-adding for new state
+    for (const layerName of allLayerNames) {
+      if (map.getLayer(`units-${layerName}-fill`)) map.removeLayer(`units-${layerName}-fill`);
+      if (map.getLayer(`units-${layerName}-line`)) map.removeLayer(`units-${layerName}-line`);
+    }
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+    loadedSourcesRef.current.delete('all');
+
+    {
+      const pmtilesUrl = `pmtiles:///packs/${config.packDir}/geom/geometries.pmtiles`;
       setLoadingStatus(`Loading geometry layers...`);
 
       try {
@@ -722,7 +776,7 @@ export default function App() {
           type: 'vector',
           url: pmtilesUrl,
           scheme: 'xyz',
-          bounds: [-91.5, 36.9, -87.0, 42.5],
+          bounds: config.pmtilesBounds,
         } as any);
 
         const fillPaint: any = {
@@ -762,7 +816,7 @@ export default function App() {
 
         const linePaint: any = {
           'line-width': 1.5,
-          'line-color': 'rgba(0,0,0,0.4)',
+          'line-color': 'rgba(0,0,0,0.3)',
           'line-opacity': 0,
           'line-opacity-transition': { duration: 0 },
           'line-gap-width': 0,
@@ -808,6 +862,7 @@ export default function App() {
         }
 
         loadedSourcesRef.current.add('all');
+        setSourcesVersion(v => v + 1);
 
         const source = map.getSource(sourceId) as any;
 
@@ -820,12 +875,13 @@ export default function App() {
             setLoadingStatus('');
           }
         });
+        map.jumpTo({ center: config.center, zoom: config.zoom });
       } catch (err) {
         console.error('Failed to add PMTiles source:', err);
         setLoadingStatus(`Error: Failed to load geometry layers`);
       }
     }
-  }, [mapInitialized, pmtilesBufferReady]);
+  }, [mapInitialized, pmtilesBufferReady, loadedState]);
 
 
   // Set up map event handlers for paint mode
@@ -898,13 +954,14 @@ export default function App() {
           onTabChange={setActiveTab}
           numDistricts={numDistricts}
           onNumDistrictsChange={setNumDistricts}
+          loadedState={loadedState}
           onLoadMap={handleLoadMap}
           activeDistrict={activeDistrict}
           onActiveDistrictChange={setActiveDistrict}
           paintMode={paintMode}
           onPaintModeChange={setPaintMode}
           visualizationMode={visualizationMode}
-          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'default' | 'districts' | 'partisan')}
+          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'partisan')}
           districtCounts={districtCounts}
           onRandomize={handleRandomize}
           onOptimize={handleOptimize}

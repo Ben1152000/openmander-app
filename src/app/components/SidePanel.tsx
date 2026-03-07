@@ -2,14 +2,15 @@ import { useRef, useState } from 'react';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Users, TrendingUp, AlertCircle, Play, RotateCcw } from 'lucide-react';
+import { Users, TrendingUp, AlertCircle, Play } from 'lucide-react';
 
 interface SidePanelProps {
   activeTab: 'summary' | 'districts' | 'automation' | 'debug';
   onTabChange: (tab: 'summary' | 'districts' | 'automation' | 'debug') => void;
   numDistricts: number;
   onNumDistrictsChange: (n: number) => void;
-  onLoadMap?: (districts: number) => void;
+  loadedState: string;
+  onLoadMap?: (state: string, districts: number) => void;
   activeDistrict: number;
   onActiveDistrictChange: (n: number) => void;
   paintMode: boolean;
@@ -39,6 +40,7 @@ export function SidePanel(props: SidePanelProps) {
     activeTab,
     onTabChange,
     numDistricts,
+    loadedState,
     onLoadMap,
     activeDistrict,
     onActiveDistrictChange,
@@ -57,8 +59,10 @@ export function SidePanel(props: SidePanelProps) {
     loadingStatus,
   } = props;
 
+  const [pendingState, setPendingState] = useState('illinois');
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(numDistricts));
   const shiftHeldOnSpinner = useRef(false);
+  const [algorithm, setAlgorithm] = useState('random-initialization');
 
   const districtsError = (() => {
     const trimmed = pendingDistrictsRaw.trim();
@@ -130,7 +134,8 @@ export function SidePanel(props: SidePanelProps) {
                   <Label htmlFor="state-select">State</Label>
                   <select
                     id="state-select"
-                    defaultValue="illinois"
+                    value={pendingState}
+                    onChange={(e) => setPendingState(e.target.value)}
                     className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
                   >
                     <option value="alabama" disabled>Alabama</option>
@@ -145,7 +150,7 @@ export function SidePanel(props: SidePanelProps) {
                     <option value="idaho" disabled>Idaho</option>
                     <option value="illinois">Illinois</option>
                     <option value="indiana" disabled>Indiana</option>
-                    <option value="iowa" disabled>Iowa</option>
+                    <option value="iowa">Iowa</option>
                     <option value="kansas" disabled>Kansas</option>
                     <option value="kentucky" disabled>Kentucky</option>
                     <option value="louisiana" disabled>Louisiana</option>
@@ -227,7 +232,7 @@ export function SidePanel(props: SidePanelProps) {
               <Button
                 className="w-full"
                 disabled={!!districtsError}
-                onClick={() => onLoadMap?.(parseInt(pendingDistrictsRaw, 10))}
+                onClick={() => onLoadMap?.(pendingState, parseInt(pendingDistrictsRaw, 10))}
               >
                 Load Map
               </Button>
@@ -321,12 +326,15 @@ export function SidePanel(props: SidePanelProps) {
                 <Label htmlFor="algorithm-select">Algorithm</Label>
                 <select
                   id="algorithm-select"
+                  value={algorithm}
+                  onChange={(e) => setAlgorithm(e.target.value)}
                   className="mt-2 flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
+                  <option value="random-initialization">Random initialization</option>
                   <option value="tabu-balance">Tabu Balance</option>
-                  <option value="shortest-splitline">Shortest Splitline</option>
-                  <option value="compact-districts">Compact Districts</option>
-                  <option value="population-equality">Population Equality</option>
+                  <option value="shortest-splitline" disabled>Shortest Splitline</option>
+                  <option value="compact-districts" disabled>Compact Districts</option>
+                  <option value="population-equality" disabled>Population Equality</option>
                 </select>
               </div>
 
@@ -345,12 +353,13 @@ export function SidePanel(props: SidePanelProps) {
               </div>
 
               <div className="flex gap-2 pt-2">
-                <Button className="flex-1" onClick={onOptimize} disabled={!onOptimize}>
+                <Button
+                  className="flex-1"
+                  onClick={algorithm === 'random-initialization' ? onRandomize : onOptimize}
+                  disabled={algorithm === 'random-initialization' ? !onRandomize : !onOptimize}
+                >
                   <Play className="mr-2 size-4" />
                   Generate
-                </Button>
-                <Button variant="outline" onClick={onRandomize} disabled={!onRandomize}>
-                  <RotateCcw className="size-4" />
                 </Button>
               </div>
             </div>
@@ -406,13 +415,6 @@ export function SidePanel(props: SidePanelProps) {
                   <div className="flex items-center gap-2">
                     <Label>Visualization:</Label>
                     <div className="flex gap-1">
-                      <Button
-                        variant={visualizationMode === 'default' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => onVisualizationModeChange('default')}
-                      >
-                        Default
-                      </Button>
                       <Button
                         variant={visualizationMode === 'districts' ? 'default' : 'outline'}
                         size="sm"
