@@ -75,6 +75,7 @@ export function SidePanel(props: SidePanelProps) {
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_DISTRICTS['illinois'] ?? numDistricts));
   const shiftHeldOnSpinner = useRef(false);
   const [algorithm, setAlgorithm] = useState('random-initialization');
+  const [lastColMetric, setLastColMetric] = useState<'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes'>('partisan');
 
   const districtsError = (() => {
     const trimmed = pendingDistrictsRaw.trim();
@@ -94,10 +95,10 @@ export function SidePanel(props: SidePanelProps) {
         </p>
       </div>
 
-      <div className="border-b flex">
+      <div className="border-b flex overflow-x-auto scrollbar-none">
         <button
           onClick={() => onTabChange('summary')}
-          className={'flex-1 px-4 py-3 text-sm font-medium transition-colors ' + (
+          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
             activeTab === 'summary'
               ? 'border-b-2 border-primary text-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -107,7 +108,7 @@ export function SidePanel(props: SidePanelProps) {
         </button>
         <button
           onClick={() => onTabChange('districts')}
-          className={'flex-1 px-4 py-3 text-sm font-medium transition-colors ' + (
+          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
             activeTab === 'districts'
               ? 'border-b-2 border-primary text-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -117,7 +118,7 @@ export function SidePanel(props: SidePanelProps) {
         </button>
         <button
           onClick={() => onTabChange('automation')}
-          className={'flex-1 px-4 py-3 text-sm font-medium transition-colors ' + (
+          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
             activeTab === 'automation'
               ? 'border-b-2 border-primary text-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -127,7 +128,7 @@ export function SidePanel(props: SidePanelProps) {
         </button>
         <button
           onClick={() => onTabChange('debug')}
-          className={'flex-1 px-4 py-3 text-sm font-medium transition-colors ' + (
+          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
             activeTab === 'debug'
               ? 'border-b-2 border-primary text-foreground'
               : 'text-muted-foreground hover:text-foreground'
@@ -137,24 +138,37 @@ export function SidePanel(props: SidePanelProps) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {activeTab === 'districts' && (
-          <div>
+          <>
             {!districtStats || districtStats.length === 0 ? (
               <p className="text-sm text-muted-foreground p-6">No plan generated yet.</p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-muted border-b sticky top-0">
                   <tr>
-                    <th className="text-left py-2 px-3 font-medium">District</th>
+                    <th className="text-left py-2 pl-6 pr-3 font-medium">District</th>
                     <th className="text-right py-2 px-3 font-medium">Population</th>
                     <th className="text-right py-2 px-3 font-medium">Deviation</th>
-                    <th className="text-right py-2 px-3 font-medium">Partisan</th>
+                    <th className="text-right py-1 pl-3 pr-6 font-medium">
+                      <select
+                        value={lastColMetric}
+                        onChange={e => setLastColMetric(e.target.value as typeof lastColMetric)}
+                        className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right"
+                      >
+                        <option value="partisan">Partisan</option>
+                        <option value="dem_pct">Dem %</option>
+                        <option value="rep_pct">Rep %</option>
+                        <option value="dem_votes">Dem Votes</option>
+                        <option value="rep_votes">Rep Votes</option>
+                      </select>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {districtStats.map((d) => {
-                    const lean = d.partisanLean;
+                    const twoParty = d.demVotes + d.repVotes;
+                    const lean = twoParty > 0 ? (d.demVotes - d.repVotes) / twoParty : null;
                     const leanLabel = lean === null ? '—'
                       : lean > 0 ? `D+${(lean * 100).toFixed(1)}%`
                       : lean < 0 ? `R+${(-lean * 100).toFixed(1)}%`
@@ -163,12 +177,23 @@ export function SidePanel(props: SidePanelProps) {
                       : lean > 0 ? 'text-blue-600'
                       : lean < 0 ? 'text-red-600'
                       : 'text-muted-foreground';
+
+                    const lastColValue = (() => {
+                      switch (lastColMetric) {
+                        case 'partisan': return { label: leanLabel, className: leanClass };
+                        case 'dem_pct': return { label: twoParty > 0 ? `${(d.demVotes / twoParty * 100).toFixed(1)}%` : '—', className: 'text-blue-600' };
+                        case 'rep_pct': return { label: twoParty > 0 ? `${(d.repVotes / twoParty * 100).toFixed(1)}%` : '—', className: 'text-red-600' };
+                        case 'dem_votes': return { label: Math.round(d.demVotes).toLocaleString(), className: 'text-blue-600' };
+                        case 'rep_votes': return { label: Math.round(d.repVotes).toLocaleString(), className: 'text-red-600' };
+                      }
+                    })();
+
                     return (
                       <tr key={d.district} className="border-b last:border-b-0 hover:bg-accent transition-colors">
-                        <td className="py-3 px-3">
+                        <td className="py-3 pl-6 pr-3">
                           <div className="flex items-center gap-2">
                             <div className="w-3 h-3 rounded" style={{ backgroundColor: d.color }} />
-                            <span>District {d.district}</span>
+                            <span>{d.district}</span>
                           </div>
                         </td>
                         <td className="py-3 px-3 text-right text-muted-foreground">
@@ -179,8 +204,8 @@ export function SidePanel(props: SidePanelProps) {
                             {d.deviation >= 0 ? '+' : ''}{d.deviation.toFixed(2)}%
                           </span>
                         </td>
-                        <td className={`py-3 px-3 text-right ${leanClass}`}>
-                          {leanLabel}
+                        <td className={`py-3 pl-3 pr-6 text-right ${lastColValue.className}`}>
+                          {lastColValue.label}
                         </td>
                       </tr>
                     );
@@ -188,7 +213,7 @@ export function SidePanel(props: SidePanelProps) {
                 </tbody>
               </table>
             )}
-          </div>
+          </>
         )}
         <div className={`p-6 space-y-6 ${activeTab === 'districts' ? 'hidden' : ''}`}>
           {activeTab === 'summary' && (

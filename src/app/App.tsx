@@ -76,7 +76,8 @@ export interface DistrictStat {
   color: string;
   population: number;
   deviation: number; // % deviation from ideal
-  partisanLean: number | null; // (dem - rep) / (dem + rep), positive = more dem
+  demVotes: number;
+  repVotes: number;
 }
 
 const DISTRICT_COLORS = [
@@ -453,18 +454,14 @@ export default function App() {
         ? Array.from(plan.district_totals('E_20_PRES_Rep'))
         : null;
 
-      setDistrictStats(populations.map((pop, i) => {
-        const dem = demVotes?.[i] ?? 0;
-        const rep = repVotes?.[i] ?? 0;
-        const twoParty = dem + rep;
-        return {
-          district: i + 1,
-          color: DISTRICT_COLORS[i % DISTRICT_COLORS.length],
-          population: pop,
-          deviation: ideal > 0 ? ((pop - ideal) / ideal) * 100 : 0,
-          partisanLean: twoParty > 0 ? (dem - rep) / twoParty : null,
-        };
-      }));
+      setDistrictStats(populations.map((pop, i) => ({
+        district: i + 1,
+        color: DISTRICT_COLORS[i % DISTRICT_COLORS.length],
+        population: pop,
+        deviation: ideal > 0 ? ((pop - ideal) / ideal) * 100 : 0,
+        demVotes: demVotes?.[i] ?? 0,
+        repVotes: repVotes?.[i] ?? 0,
+      })));
     } catch (err) {
       console.error('Failed to compute district stats:', err);
       setDistrictStats(null);
@@ -928,12 +925,12 @@ export default function App() {
           setLoadingStatus(`Error loading geometry layers`);
         });
 
-        source.on('data', (e: any) => {
-          if (e.dataType === 'source' && e.isSourceLoaded) {
-            setLoadingStatus('');
-          }
-        });
         map.jumpTo({ center: config.center, zoom: config.zoom });
+
+        // Clear loading status once MapLibre has finished all pending work.
+        // 'idle' is more reliable than 'sourcedata' — the latter can fire before
+        // the source is fully ready or be missed if the source loads synchronously.
+        map.once('idle', () => setLoadingStatus(''));
       } catch (err) {
         console.error('Failed to add PMTiles source:', err);
         setLoadingStatus(`Error: Failed to load geometry layers`);
