@@ -4,7 +4,7 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Users, TrendingUp, AlertCircle, Play } from 'lucide-react';
-import type { DistrictStat } from '@/app/App';
+import type { DistrictStat } from '@/app/constants/metrics';
 
 const STATE_DISTRICTS: Record<string, number> = {
   alabama: 7, alaska: 1, arizona: 9, arkansas: 4, california: 52, colorado: 8,

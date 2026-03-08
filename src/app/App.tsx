@@ -9,6 +9,16 @@ import { MapViewer } from '@/app/components/MapViewer';
 import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
 import '@/App.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import {
+  districtColor, lerpColor, partisanStepColor,
+  PARTISAN_STEPS, ETHNICITY_COLOR_RANGE, UNIT_GRAY_FILL, DISTRICT_FILL_OPACITY,
+} from './constants/colors';
+import { ETHNICITY_METRICS, ETHNICITY_COLS, ETHNICITY_STAT_KEYS } from './constants/metrics';
+import type { DistrictStat, EthnicityMetric } from './constants/metrics';
+import {
+  ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK,
+  DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS,
+} from './constants/config';
 
 // WKB to GeoJSON parser for MultiPolygon
 function parseWkbMultiPolygon(wkb: Uint8Array): GeoJSON.MultiPolygon | null {
@@ -72,82 +82,22 @@ function parseWkbMultiPolygon(wkb: Uint8Array): GeoJSON.MultiPolygon | null {
   };
 }
 
-export interface DistrictStat {
-  district: number;
-  color: string;
-  population: number;
-  deviation: number; // % deviation from ideal
-  demVotes: number;
-  repVotes: number;
-  whitePct: number;
-  blackPct: number;
-  hispanicPct: number;
-  asianPct: number;
-  nativePct: number;
-  pacificPct: number;
-}
-
-const ETHNICITY_METRICS = ['white_pct', 'black_pct', 'hispanic_pct', 'asian_pct', 'native_pct', 'pacific_pct'] as const;
-type EthnicityMetric = typeof ETHNICITY_METRICS[number];
-
-const ETHNICITY_COLS: Record<EthnicityMetric, string> = {
-  white_pct:    'T_20_CENS_White',
-  black_pct:    'T_20_CENS_Black',
-  hispanic_pct: 'T_20_CENS_Hispanic',
-  asian_pct:    'T_20_CENS_Asian',
-  native_pct:   'T_20_CENS_Native',
-  pacific_pct:  'T_20_CENS_Pacific',
-};
-
-// [lightColor, darkColor, zeroGroupColor, zeroPopColor]
-// lightColor → darkColor: concentration ramp (low → high)
-// zeroGroupColor: unit has population but 0 of this group
-// zeroPopColor: unit has no population at all
-const ETHNICITY_COLOR_RANGE: Record<EthnicityMetric, [string, string, string, string]> = {
-  white_pct:    ['#f0f7ff', '#003d99', '#ffffff', '#d8d8d8'],
-  black_pct:    ['#f8f5ff', '#3d008f', '#ffffff', '#d8d8d8'],
-  hispanic_pct: ['#fff8f0', '#e05000', '#ffffff', '#d8d8d8'],
-  asian_pct:    ['#f2fbf7', '#006b40', '#ffffff', '#d8d8d8'],
-  native_pct:   ['#fefef2', '#c49a00', '#ffffff', '#d8d8d8'],
-  pacific_pct:  ['#fef3f0', '#b03020', '#ffffff', '#d8d8d8'],
-};
-
-const ETHNICITY_STAT_KEYS: Record<EthnicityMetric, keyof DistrictStat> = {
-  white_pct:    'whitePct',
-  black_pct:    'blackPct',
-  hispanic_pct: 'hispanicPct',
-  asian_pct:    'asianPct',
-  native_pct:   'nativePct',
-  pacific_pct:  'pacificPct',
-};
-
-function lerpColor(t: number, light: string, dark: string): string {
-  const lr = parseInt(light.slice(1, 3), 16), lg = parseInt(light.slice(3, 5), 16), lb = parseInt(light.slice(5, 7), 16);
-  const dr = parseInt(dark.slice(1, 3), 16),  dg = parseInt(dark.slice(3, 5), 16),  db = parseInt(dark.slice(5, 7), 16);
-  const r = Math.round(lr + (dr - lr) * t).toString(16).padStart(2, '0');
-  const g = Math.round(lg + (dg - lg) * t).toString(16).padStart(2, '0');
-  const b = Math.round(lb + (db - lb) * t).toString(16).padStart(2, '0');
-  return `#${r}${g}${b}`;
-}
-
-const PARTISAN_STEPS: [number, string][] = [
-  [-1.00, '#ff4040'], [-0.50, '#fa9595'], [-0.30, '#f4b4b4'], [-0.20, '#f0c4c4'],
-  [-0.15, '#eecccc'], [-0.12, '#edd2d2'], [-0.09, '#ebd8d8'], [-0.06, '#eadede'],
-  [-0.04, '#e9e2e2'], [-0.02, '#e8e6e6'], [ 0.00, '#e6e6e8'], [ 0.02, '#e2e2e9'],
-  [ 0.04, '#dedeea'], [ 0.06, '#d8d8eb'], [ 0.09, '#d2d2ed'], [ 0.12, '#ccccee'],
-  [ 0.15, '#c4c4f0'], [ 0.20, '#b4b4f4'], [ 0.30, '#9595fa'], [ 0.50, '#4040ff'],
-];
-function partisanStepColor(lean: number): string {
-  for (let i = PARTISAN_STEPS.length - 1; i >= 0; i--) {
-    if (lean >= PARTISAN_STEPS[i][0]) return PARTISAN_STEPS[i][1];
+// Area-weighted centroid of a MultiPolygon (uses exterior rings only).
+function multiPolygonCentroid(mp: GeoJSON.MultiPolygon): [number, number] {
+  let totalArea = 0, cx = 0, cy = 0;
+  for (const polygon of mp.coordinates) {
+    const ring = polygon[0]; // exterior ring
+    let area = 0, rx = 0, ry = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+      area += cross;
+      rx += (ring[i][0] + ring[j][0]) * cross;
+      ry += (ring[i][1] + ring[j][1]) * cross;
+    }
+    area = Math.abs(area) / 2;
+    if (area > 0) { cx += rx / (6 * area) * area; cy += ry / (6 * area) * area; totalArea += area; }
   }
-  return '#ff4040';
-}
-
-const GOLDEN_ANGLE = 137.50776405;
-function districtColor(index: number): string {
-  const hue = (index * GOLDEN_ANGLE) % 360;
-  return `hsl(${hue.toFixed(1)} 65% 52%)`;
+  return totalArea > 0 ? [cx / totalArea, cy / totalArea] : [0, 0];
 }
 
 // PMTiles protocol handler - set up once
@@ -162,34 +112,6 @@ function setupPmtilesProtocol() {
   pmtilesProtocolSetup = true;
 }
 
-// Constants
-const ZOOM_THRESHOLD_COUNTY_TO_VTD = 8;
-const ZOOM_THRESHOLD_VTD_TO_BLOCK = 12;
-const DEFAULT_ZOOM = 6;
-const DEFAULT_NUM_DISTRICTS = 17; // Illinois congressional districts
-const DEFAULT_LAYER = 'county';
-
-interface StateConfig {
-  packDir: string;
-  pmtilesBounds: [number, number, number, number]; // [west, south, east, north]
-  center: [number, number];
-  zoom: number;
-}
-
-const STATE_CONFIGS: Record<string, StateConfig> = {
-  illinois: {
-    packDir: 'IL_2020_webpack',
-    pmtilesBounds: [-91.5, 36.9, -87.0, 42.5],
-    center: [-89.2, 40.0],
-    zoom: 6,
-  },
-  iowa: {
-    packDir: 'IA_2020_webpack',
-    pmtilesBounds: [-96.7, 40.3, -90.1, 43.6],
-    center: [-93.5, 42.0],
-    zoom: 6.5,
-  },
-};
 
 export default function App() {
   // Resize state
@@ -630,6 +552,7 @@ export default function App() {
 
     // Helper to remove district overlay layers
     const removeDistrictOverlay = () => {
+      if (map.getLayer('district-labels')) map.removeLayer('district-labels');
       if (map.getLayer('district-boundaries-fill')) {
         map.removeLayer('district-boundaries-fill');
       }
@@ -651,13 +574,30 @@ export default function App() {
           id: 'district-boundaries-fill',
           type: 'fill',
           source: districtSourceId,
-          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.70 },
+          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.60 },
         });
         map.addLayer({
           id: 'district-boundaries-line',
           type: 'line',
           source: districtSourceId,
           paint: { 'line-color': '#333333', 'line-width': 1.5, 'line-opacity': 1.0 },
+        });
+        map.addLayer({
+          id: 'district-labels',
+          type: 'symbol',
+          source: districtSourceId,
+          layout: {
+            'text-field': ['to-string', ['get', 'district']],
+            'text-size': 14,
+            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+            'text-allow-overlap': false,
+            'visibility': visualizationMode === 'districts' ? 'visible' : 'none',
+          },
+          paint: {
+            'text-color': '#111111',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2,
+          },
         });
         districtLayersAddedRef.current = true;
         districtGeoJsonLoadedRef.current = districtGeoJson;
@@ -671,27 +611,8 @@ export default function App() {
         // the frontend red↔gray↔blue ramp at each interval's midpoint.
         const fillColor: any = districtColorMetric === 'partisan'
           ? ['step', ['get', 'partisanLean'],
-              '#ff4040',          // default (< -1.0)
-              -1.00, '#ff4040',   // [-1.00, -0.50)  mid=-0.75
-              -0.50, '#fa9595',   // [-0.50, -0.30)  mid=-0.40
-              -0.30, '#f4b4b4',   // [-0.30, -0.20)  mid=-0.25
-              -0.20, '#f0c4c4',   // [-0.20, -0.15)  mid=-0.175
-              -0.15, '#eecccc',   // [-0.15, -0.12)  mid=-0.135
-              -0.12, '#edd2d2',   // [-0.12, -0.09)  mid=-0.105
-              -0.09, '#ebd8d8',   // [-0.09, -0.06)  mid=-0.075
-              -0.06, '#eadede',   // [-0.06, -0.04)  mid=-0.05
-              -0.04, '#e9e2e2',   // [-0.04, -0.02)  mid=-0.03
-              -0.02, '#e8e6e6',   // [-0.02,  0.00)  mid=-0.01
-               0.00, '#e6e6e8',   // [ 0.00,  0.02)  mid= 0.01
-               0.02, '#e2e2e9',   // [ 0.02,  0.04)  mid= 0.03
-               0.04, '#dedeea',   // [ 0.04,  0.06)  mid= 0.05
-               0.06, '#d8d8eb',   // [ 0.06,  0.09)  mid= 0.075
-               0.09, '#d2d2ed',   // [ 0.09,  0.12)  mid= 0.105
-               0.12, '#ccccee',   // [ 0.12,  0.15)  mid= 0.135
-               0.15, '#c4c4f0',   // [ 0.15,  0.20)  mid= 0.175
-               0.20, '#b4b4f4',   // [ 0.20,  0.30)  mid= 0.25
-               0.30, '#9595fa',   // [ 0.30,  0.50)  mid= 0.40
-               0.50, '#4040ff']   // [ 0.50,  1.00]  mid= 0.75
+              PARTISAN_STEPS[0][1],
+              ...PARTISAN_STEPS.flatMap(([val, color]) => [val, color])]
           : (() => {
             const isEthnic = ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric);
             if (isEthnic && districtStats && districtStats.length > 0) {
@@ -711,9 +632,15 @@ export default function App() {
             return ['get', 'color'];
           })();
         map.setPaintProperty('district-boundaries-fill', 'fill-color', fillColor);
-        map.setPaintProperty('district-boundaries-fill', 'fill-opacity', 0.70);
+        map.setPaintProperty('district-boundaries-fill', 'fill-opacity', 0.60);
+        if (map.getLayer('district-labels')) {
+          map.setLayoutProperty('district-labels', 'visibility', 'visible');
+        }
       } else {
         map.setPaintProperty('district-boundaries-fill', 'fill-opacity', 0);
+        if (map.getLayer('district-labels')) {
+          map.setLayoutProperty('district-labels', 'visibility', 'none');
+        }
       }
     } else {
       removeDistrictOverlay();
@@ -730,7 +657,7 @@ export default function App() {
             'case',
             ['<', ['feature-state', 'partisanLean'], -1.5], '#d8d8d8',
             ['interpolate', ['linear'], ['feature-state', 'partisanLean'],
-              -1, '#ff0000', -0.5, '#ff8080', 0, '#e8e8e8', 0.5, '#8080ff', 1, '#0000ff'],
+              -1, '#990000', -0.5, '#ff4040', 0, '#e8e8e8', 0.5, '#4040ff', 1, '#000099'],
           ],
           '#e8e8e8'
         ];
