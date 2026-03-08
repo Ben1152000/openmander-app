@@ -20,8 +20,8 @@ const STATE_DISTRICTS: Record<string, number> = {
 };
 
 interface SidePanelProps {
-  activeTab: 'summary' | 'districts' | 'automation' | 'debug';
-  onTabChange: (tab: 'summary' | 'districts' | 'automation' | 'debug') => void;
+  activeTab: 'summary' | 'districts' | 'automation' | 'analysis' | 'debug';
+  onTabChange: (tab: 'summary' | 'districts' | 'automation' | 'analysis' | 'debug') => void;
   numDistricts: number;
   onNumDistrictsChange: (n: number) => void;
   loadedState: string;
@@ -37,7 +37,10 @@ interface SidePanelProps {
   onOptimize: () => void;
   onRefreshDistricts: () => void;
   onClearAssignments: () => void;
+  districtColorMetric: 'default' | 'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes' | 'white_pct' | 'black_pct' | 'hispanic_pct' | 'asian_pct' | 'native_pct' | 'pacific_pct';
+  onDistrictColorMetricChange: (m: 'default' | 'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes' | 'white_pct' | 'black_pct' | 'hispanic_pct' | 'asian_pct' | 'native_pct' | 'pacific_pct') => void;
   districtStats: DistrictStat[] | null;
+  districtSwatchColors: Record<number, string>;
   wasmLoading: boolean;
   wasmError: Error | null;
   currentZoom: number;
@@ -63,7 +66,10 @@ export function SidePanel(props: SidePanelProps) {
     onOptimize,
     onRefreshDistricts,
     onClearAssignments,
+    districtColorMetric,
+    onDistrictColorMetricChange,
     districtStats,
+    districtSwatchColors,
     wasmLoading,
     wasmError,
     currentZoom,
@@ -75,7 +81,6 @@ export function SidePanel(props: SidePanelProps) {
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_DISTRICTS['illinois'] ?? numDistricts));
   const shiftHeldOnSpinner = useRef(false);
   const [algorithm, setAlgorithm] = useState('random-initialization');
-  const [lastColMetric, setLastColMetric] = useState<'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes'>('partisan');
 
   const districtsError = (() => {
     const trimmed = pendingDistrictsRaw.trim();
@@ -127,6 +132,16 @@ export function SidePanel(props: SidePanelProps) {
           Automation
         </button>
         <button
+          onClick={() => onTabChange('analysis')}
+          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
+            activeTab === 'analysis'
+              ? 'border-b-2 border-primary text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Analysis
+        </button>
+        <button
           onClick={() => onTabChange('debug')}
           className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
             activeTab === 'debug'
@@ -152,15 +167,23 @@ export function SidePanel(props: SidePanelProps) {
                     <th className="text-right py-2 px-3 font-medium">Deviation</th>
                     <th className="text-right py-1 pl-3 pr-6 font-medium">
                       <select
-                        value={lastColMetric}
-                        onChange={e => setLastColMetric(e.target.value as typeof lastColMetric)}
+                        value={districtColorMetric}
+                        onChange={e => onDistrictColorMetricChange(e.target.value as typeof districtColorMetric)}
                         className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right"
                       >
+                        <option value="default">Default</option>
                         <option value="partisan">Partisan</option>
                         <option value="dem_pct">Dem %</option>
                         <option value="rep_pct">Rep %</option>
                         <option value="dem_votes">Dem Votes</option>
                         <option value="rep_votes">Rep Votes</option>
+                        <optgroup label="Ethnicity (2020 Census)" />
+                        <option value="white_pct">% White</option>
+                        <option value="black_pct">% Black</option>
+                        <option value="hispanic_pct">% Hispanic</option>
+                        <option value="asian_pct">% Asian</option>
+                        <option value="native_pct">% Native</option>
+                        <option value="pacific_pct">% Pacific</option>
                       </select>
                     </th>
                   </tr>
@@ -179,12 +202,19 @@ export function SidePanel(props: SidePanelProps) {
                       : 'text-muted-foreground';
 
                     const lastColValue = (() => {
-                      switch (lastColMetric) {
+                      switch (districtColorMetric) {
+                        case 'default': return { label: '—', className: 'text-muted-foreground' };
                         case 'partisan': return { label: leanLabel, className: leanClass };
                         case 'dem_pct': return { label: twoParty > 0 ? `${(d.demVotes / twoParty * 100).toFixed(1)}%` : '—', className: 'text-blue-600' };
                         case 'rep_pct': return { label: twoParty > 0 ? `${(d.repVotes / twoParty * 100).toFixed(1)}%` : '—', className: 'text-red-600' };
                         case 'dem_votes': return { label: Math.round(d.demVotes).toLocaleString(), className: 'text-blue-600' };
                         case 'rep_votes': return { label: Math.round(d.repVotes).toLocaleString(), className: 'text-red-600' };
+                        case 'white_pct': return { label: `${d.whitePct.toFixed(1)}%`, className: '' };
+                        case 'black_pct': return { label: `${d.blackPct.toFixed(1)}%`, className: '' };
+                        case 'hispanic_pct': return { label: `${d.hispanicPct.toFixed(1)}%`, className: '' };
+                        case 'asian_pct': return { label: `${d.asianPct.toFixed(1)}%`, className: '' };
+                        case 'native_pct': return { label: `${d.nativePct.toFixed(1)}%`, className: '' };
+                        case 'pacific_pct': return { label: `${d.pacificPct.toFixed(1)}%`, className: '' };
                       }
                     })();
 
@@ -192,7 +222,7 @@ export function SidePanel(props: SidePanelProps) {
                       <tr key={d.district} className="border-b last:border-b-0 hover:bg-accent transition-colors">
                         <td className="py-3 pl-6 pr-3">
                           <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded" style={{ backgroundColor: d.color }} />
+                            <div className="w-3 h-3 rounded" style={{ backgroundColor: districtSwatchColors[d.district] ?? d.color }} />
                             <span>{d.district}</span>
                           </div>
                         </td>
