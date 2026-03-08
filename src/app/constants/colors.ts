@@ -24,11 +24,12 @@ export const DISTRICT_FILL_OPACITY = 0.60;
 // Colors between ±0.50 and 0.00 are linearly interpolated in RGB for equal visual steps.
 export const PARTISAN_STEPS: [number, string][] = [
   [-1.00, '#c01010'],  // very dark red (extreme)
-  [-0.30, '#ff4040'],  // bright red
-  [-0.20, '#f68383'],
-  [-0.10, '#f1a5a5'],
-  [-0.08, '#efb6b6'],
-  [-0.06, '#eec0c0'],
+  [-0.30, '#ff3030'],  // bright red
+  [-0.20, '#fa6060'],
+  [-0.10, '#f68383'],
+  [-0.08, '#f1a5a5'],
+  [-0.06, '#efb6b6'],
+  [-0.05, '#eec0c0'],
   [-0.04, '#eccaca'],
   [-0.03, '#ebd4d4'],
   [-0.02, '#eadbdb'],
@@ -39,10 +40,11 @@ export const PARTISAN_STEPS: [number, string][] = [
   [ 0.02, '#d4d4eb'],
   [ 0.03, '#cacaec'],
   [ 0.04, '#c0c0ee'],
-  [ 0.06, '#b6b6ef'],
-  [ 0.08, '#a5a5f1'],
-  [ 0.10, '#8383f6'],
-  [ 0.20, '#4040ff'],  // bright blue
+  [ 0.05, '#b6b6ef'],
+  [ 0.06, '#a5a5f1'],
+  [ 0.08, '#8383f6'],
+  [ 0.10, '#6060fa'],
+  [ 0.20, '#3030ff'],  // bright blue
   [ 0.30, '#1010cf'],  // very dark blue (extreme)
 ];
 
