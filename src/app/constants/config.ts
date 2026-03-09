@@ -26,4 +26,10 @@ export const STATE_CONFIGS: Record<string, StateConfig> = {
     center: [-93.5, 42.0],
     zoom: 6.5,
   },
+  indiana: {
+    packDir: 'IN_2020_webpack',
+    pmtilesBounds: [-88.1, 37.7, -84.7, 41.8],
+    center: [-86.3, 39.8],
+    zoom: 6.5,
+  },
 };

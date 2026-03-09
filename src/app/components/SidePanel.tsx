@@ -273,7 +273,7 @@ export function SidePanel(props: SidePanelProps) {
                     <option value="georgia" disabled>Georgia</option>
                     <option value="idaho" disabled>Idaho</option>
                     <option value="illinois">Illinois</option>
-                    <option value="indiana" disabled>Indiana</option>
+                    <option value="indiana">Indiana</option>
                     <option value="iowa">Iowa</option>
                     <option value="kansas" disabled>Kansas</option>
                     <option value="kentucky" disabled>Kentucky</option>

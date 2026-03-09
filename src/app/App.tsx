@@ -10,7 +10,7 @@ import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
 import '@/App.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
-  districtColor, lerpColor, partisanStepColor,
+  districtColor, rampColor, partisanStepColor,
   PARTISAN_STEPS, ETHNICITY_COLOR_RANGE, UNIT_GRAY_FILL, DISTRICT_FILL_OPACITY,
 } from './constants/colors';
 import { ETHNICITY_METRICS, ETHNICITY_COLS, ETHNICITY_STAT_KEYS } from './constants/metrics';
@@ -180,9 +180,9 @@ export default function App() {
     for (const d of districtStats) {
       if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
         const metric = districtColorMetric as EthnicityMetric;
-        const [lightColor, darkColor, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
+        const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
         const pct = (d[ETHNICITY_STAT_KEYS[metric]] as number) / 100;
-        result[d.district] = pct === 0 ? zeroGroupColor : lerpColor(pct, lightColor, darkColor);
+        result[d.district] = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
       } else if (districtColorMetric === 'partisan') {
         const total = d.demVotes + d.repVotes;
         const lean = total > 0 ? (d.demVotes - d.repVotes) / total : 0;
@@ -617,13 +617,13 @@ export default function App() {
             const isEthnic = ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric);
             if (isEthnic && districtStats && districtStats.length > 0) {
               const metric = districtColorMetric as EthnicityMetric;
-              const [lightColor, darkColor, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
+              const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
               const statKey = ETHNICITY_STAT_KEYS[metric];
               return [
                 'match', ['get', 'district'],
                 ...districtStats.flatMap(d => {
                   const pct = (d[statKey] as number) / 100;
-                  const color = pct === 0 ? zeroGroupColor : lerpColor(pct, lightColor, darkColor);
+                  const color = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
                   return [d.district, color];
                 }),
                 '#888888',
@@ -704,7 +704,7 @@ export default function App() {
       } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric) && visualizationMode !== 'districts') {
         const metric = districtColorMetric as EthnicityMetric;
         const stateKey = `conc_${metric.replace('_pct', '')}`;
-        const [lightColor, darkColor, zeroGroupColor, zeroPopColor] = ETHNICITY_COLOR_RANGE[metric];
+        const [stops, zeroGroupColor, zeroPopColor] = ETHNICITY_COLOR_RANGE[metric];
         const ethnicPaint: any = [
           'case',
           ['!=', ['feature-state', stateKey], null],
@@ -712,9 +712,9 @@ export default function App() {
             'case',
             ['<', ['feature-state', stateKey], 0], zeroPopColor,
             ['==', ['feature-state', stateKey], 0], zeroGroupColor,
-            ['interpolate', ['linear'], ['feature-state', stateKey], 0, lightColor, 1, darkColor],
+            ['interpolate', ['linear'], ['feature-state', stateKey], ...stops.flat()],
           ],
-          lightColor,
+          stops[0][1],
         ];
         for (const layerName of allLayers) {
           const fillLayerId = `units-${layerName}-fill`;

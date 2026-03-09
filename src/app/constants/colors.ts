@@ -57,24 +57,36 @@ export function partisanStepColor(lean: number): string {
 
 // --- Ethnicity concentration ---
 
-// Per-metric color ramp: [lightColor, darkColor, zeroGroupColor, zeroPopColor]
-// lightColor → darkColor: low → high concentration
-// zeroGroupColor: unit has population but none of this group
+// Per-metric color ramp: [stops, zeroGroupColor, zeroPopColor]
+// stops: [[position (0–1), hexColor], ...] defining the multi-stop gradient
+// zeroGroupColor: unit has population but none of this group (always white)
 // zeroPopColor: unit has no population at all
-export const ETHNICITY_COLOR_RANGE: Record<EthnicityMetric, [string, string, string, string]> = {
-  white_pct:    ['#f0f7ff', '#003d99', '#ffffff', '#d8d8d8'],
-  black_pct:    ['#f8f5ff', '#3d008f', '#ffffff', '#d8d8d8'],
-  hispanic_pct: ['#fff8f0', '#e05000', '#ffffff', '#d8d8d8'],
-  asian_pct:    ['#f2fbf7', '#006b40', '#ffffff', '#d8d8d8'],
-  native_pct:   ['#fefef2', '#c49a00', '#ffffff', '#d8d8d8'],
-  pacific_pct:  ['#fef3f0', '#b03020', '#ffffff', '#d8d8d8'],
+export const ETHNICITY_COLOR_RANGE: Record<EthnicityMetric, [[number, string][], string, string]> = {
+  white_pct:    [[[0, '#ffffff'], [0.25, '#c0dcff'], [0.5, '#2090f0'], [0.75, '#0040a0'], [1, '#001040']], '#ffffff', '#d8d8d8'],
+  black_pct:    [[[0, '#ffffff'], [0.25, '#e4c8ff'], [0.5, '#9820e0'], [0.75, '#5800a0'], [1, '#220040']], '#ffffff', '#d8d8d8'],
+  hispanic_pct: [[[0, '#ffffff'], [0.25, '#ffe0a0'], [0.5, '#ff7000'], [0.75, '#b02000'], [1, '#4a0800']], '#ffffff', '#d8d8d8'],
+  asian_pct:    [[[0, '#ffffff'], [0.25, '#b0f0d8'], [0.5, '#00b870'], [0.75, '#006040'], [1, '#002018']], '#ffffff', '#d8d8d8'],
+  native_pct:   [[[0, '#ffffff'], [0.25, '#ffe880'], [0.5, '#e0a000'], [0.75, '#804800'], [1, '#301800']], '#ffffff', '#d8d8d8'],
+  pacific_pct:  [[[0, '#ffffff'], [0.25, '#ffc0a0'], [0.5, '#f04020'], [0.75, '#901000'], [1, '#380005']], '#ffffff', '#d8d8d8'],
 };
 
-export function lerpColor(t: number, light: string, dark: string): string {
-  const lr = parseInt(light.slice(1, 3), 16), lg = parseInt(light.slice(3, 5), 16), lb = parseInt(light.slice(5, 7), 16);
-  const dr = parseInt(dark.slice(1, 3), 16),  dg = parseInt(dark.slice(3, 5), 16),  db = parseInt(dark.slice(5, 7), 16);
-  const r = Math.round(lr + (dr - lr) * t).toString(16).padStart(2, '0');
-  const g = Math.round(lg + (dg - lg) * t).toString(16).padStart(2, '0');
-  const b = Math.round(lb + (db - lb) * t).toString(16).padStart(2, '0');
-  return `#${r}${g}${b}`;
+function lerpColor(t: number, a: string, b: string): string {
+  const ar = parseInt(a.slice(1, 3), 16), ag = parseInt(a.slice(3, 5), 16), ab = parseInt(a.slice(5, 7), 16);
+  const br = parseInt(b.slice(1, 3), 16), bg = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);
+  const r = Math.round(ar + (br - ar) * t).toString(16).padStart(2, '0');
+  const g = Math.round(ag + (bg - ag) * t).toString(16).padStart(2, '0');
+  const bh = Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
+  return `#${r}${g}${bh}`;
+}
+
+export function rampColor(t: number, stops: [number, string][]): string {
+  if (t <= stops[0][0]) return stops[0][1];
+  if (t >= stops[stops.length - 1][0]) return stops[stops.length - 1][1];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const local = (t - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]);
+      return lerpColor(local, stops[i - 1][1], stops[i][1]);
+    }
+  }
+  return stops[stops.length - 1][1];
 }
