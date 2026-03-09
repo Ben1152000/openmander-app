@@ -1,4 +1,4 @@
-import type { EthnicityMetric } from './metrics';
+import type { EthnicityMetric, ScalarMetric } from './metrics';
 
 // --- District colors ---
 
@@ -55,11 +55,50 @@ export function partisanStepColor(lean: number): string {
   return PARTISAN_STEPS[0][1];
 }
 
+// --- Density ramp (input = Math.log1p(people_per_km²), fixed absolute thresholds) ---
+// Light green → teal → blue → dark blue → purple → dark red → bright red → orange.
+export const DENSITY_COLOR_RAMP: [number, string][] = [
+  [Math.log1p(0),      '#ffffff'],
+  [Math.log1p(5),      '#f4fbf2'],
+  [Math.log1p(10),     '#d9f2e5'],
+  [Math.log1p(20),     '#a8e3e5'],
+  [Math.log1p(50),     '#71c7d7'],
+  [Math.log1p(100),    '#428acb'],
+  [Math.log1p(200),    '#2d6bb3'],
+  [Math.log1p(500),    '#0c4c9f'],
+  [Math.log1p(1000),   '#00309f'],
+  [Math.log1p(2000),   '#521f8b'],
+  [Math.log1p(5000),   '#700080'],
+  [Math.log1p(10000),  '#990049'],
+  [Math.log1p(20000),  '#cc003d'],
+  [Math.log1p(30000),  '#ff0000'],
+  [Math.log1p(50000),  '#ff6200'],
+  [Math.log1p(100000), '#ff9e00'],
+  [Math.log1p(200000), '#ffc300'],
+];
+
+// 	<#f4fbf2; 20-99</td>
+// 	<#d9f2e5; 100-399</td>
+// 	<#a8e3e5; 400-1k</td>
+// 	<#71c7d7; 1k-2k</td>
+// 	<#428acb; 2k-3.5k</td>
+// 	<#2d6bb3; 3.5k-5.5k</td>
+// 	<#0c4c9f; 5.5k-7.5k</td>
+// 	<#00309f; 7.5k-10k</td>
+// 	<#521f8b; 10k-12k</td>
+// 	<#700080; 12k-16k</td>
+// 	<#990049; 16k-22k</td>
+// 	<#cc003d; 22k-30k</td>
+// 	<#ff0000; 30k-50k</td>
+// 	<#ff6200; 50k-100k</td>
+// 	<#ff9e00; 100k-200k</td>
+// 	<#ffc300; 200k+</td>
+
 // --- Ethnicity concentration ---
 
 // Per-metric color ramp: [stops, zeroGroupColor, zeroPopColor]
-// stops: [[position (0–1), hexColor], ...] defining the multi-stop gradient
-// zeroGroupColor: unit has population but none of this group (always white)
+// Each group has a distinct hue; all ramp from white (0%) to a saturated dark (100%).
+// zeroGroupColor: unit has population but none of this group
 // zeroPopColor: unit has no population at all
 export const ETHNICITY_COLOR_RANGE: Record<EthnicityMetric, [[number, string][], string, string]> = {
   white_pct:    [[[0, '#ffffff'], [0.25, '#c0dcff'], [0.5, '#2090f0'], [0.75, '#0040a0'], [1, '#001040']], '#ffffff', '#d8d8d8'],
@@ -78,6 +117,10 @@ function lerpColor(t: number, a: string, b: string): string {
   const bh = Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
   return `#${r}${g}${bh}`;
 }
+
+export const SCALAR_COLOR_RAMPS: Record<ScalarMetric, [number, string][]> = {
+  population_density: DENSITY_COLOR_RAMP,
+};
 
 export function rampColor(t: number, stops: [number, string][]): string {
   if (t <= stops[0][0]) return stops[0][1];

@@ -11,10 +11,10 @@ import '@/App.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   districtColor, rampColor, partisanStepColor,
-  PARTISAN_STEPS, ETHNICITY_COLOR_RANGE, UNIT_GRAY_FILL, DISTRICT_FILL_OPACITY,
+  PARTISAN_STEPS, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, UNIT_GRAY_FILL, DISTRICT_FILL_OPACITY,
 } from './constants/colors';
-import { ETHNICITY_METRICS, ETHNICITY_COLS, ETHNICITY_STAT_KEYS } from './constants/metrics';
-import type { DistrictStat, EthnicityMetric } from './constants/metrics';
+import { ETHNICITY_METRICS, ETHNICITY_COLS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS } from './constants/metrics';
+import type { DistrictStat, EthnicityMetric, ScalarMetric } from './constants/metrics';
 import {
   ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK,
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS,
@@ -159,6 +159,7 @@ export default function App() {
   const visualizationModeRef = useRef<'districts' | 'partisan'>('districts');
   const partisanLeanRef = useRef<Record<string, number>>({});
   const ethnicityDataRef = useRef<Partial<Record<EthnicityMetric, Record<string, number>>>>({});
+  const scalarDataRef = useRef<Partial<Record<ScalarMetric, Record<string, number>>>>({});
   const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
   const districtLayersAddedRef = useRef<boolean>(false);
   const districtGeoJsonLoadedRef = useRef<GeoJSON.FeatureCollection | null>(null);
@@ -169,9 +170,8 @@ export default function App() {
   const computingDistrictsRef = useRef(false);
   const pendingComputeRef = useRef(false);
   const [districtStats, setDistrictStats] = useState<DistrictStat[] | null>(null);
-
   // District table color metric (also controls district overlay color on map)
-  const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes' | 'white_pct' | 'black_pct' | 'hispanic_pct' | 'asian_pct' | 'native_pct' | 'pacific_pct'>('default');
+  const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
 
   // Swatch colors for the districts table — matches district view colors
   const districtSwatchColors = useMemo((): Record<number, string> => {
@@ -183,6 +183,10 @@ export default function App() {
         const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
         const pct = (d[ETHNICITY_STAT_KEYS[metric]] as number) / 100;
         result[d.district] = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
+      } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
+        const metric = districtColorMetric as ScalarMetric;
+        const raw = d[SCALAR_STAT_KEYS[metric]] as number;
+        result[d.district] = rampColor(Math.log1p(raw), SCALAR_COLOR_RAMPS[metric]);
       } else if (districtColorMetric === 'partisan') {
         const total = d.demVotes + d.repVotes;
         const lean = total > 0 ? (d.demVotes - d.repVotes) / total : 0;
@@ -328,7 +332,12 @@ export default function App() {
         const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
         const leanData: Record<string, number> = {};
         const indexMaps: Record<string, Record<number, string>> = {};
-        
+
+        // Accumulate raw scalar values across all layers; converted to log scale after the loop.
+        const scalarRawAll: Record<ScalarMetric, Record<string, number>> = {
+          population_density: {},
+        };
+
         for (const layerName of allLayers) {
           const csvFile = packFiles[`data/${layerName}.csv`];
           if (!csvFile) {
@@ -345,6 +354,7 @@ export default function App() {
           const demIdx = headers.indexOf('E_20_PRES_Dem');
           const repIdx = headers.indexOf('E_20_PRES_Rep');
           const censTotalIdx = headers.indexOf('T_20_CENS_Total');
+          const landM2Idx = headers.indexOf('land_m2');
           const ethnicColIdxs = Object.fromEntries(
             ETHNICITY_METRICS.map(m => [m, headers.indexOf(ETHNICITY_COLS[m])])
           ) as Record<EthnicityMetric, number>;
@@ -385,6 +395,8 @@ export default function App() {
 
             if (censTotalIdx !== -1) {
               const censTotal = parseFloat(cols[censTotalIdx]) || 0;
+              const landM2 = landM2Idx !== -1 ? (parseFloat(cols[landM2Idx]) || 0) : 0;
+              scalarRawAll.population_density[geoId] = censTotal > 0 && landM2 > 0 ? censTotal / (landM2 / 1e6) : -1;
               for (const m of ETHNICITY_METRICS) {
                 const colIdx = ethnicColIdxs[m];
                 if (colIdx !== -1 && ethnicLayerData[m]) {
@@ -402,10 +414,18 @@ export default function App() {
               Object.assign(ethnicityDataRef.current[m]!, ethnicLayerData[m]);
             }
           }
-          
+
           indexMaps[layerName] = indexToGeoId;
         }
-        
+
+        // Convert raw density to log scale; ramp thresholds are absolute (fixed intervals).
+        for (const m of SCALAR_METRICS) {
+          scalarDataRef.current[m] = {};
+          for (const [geoId, v] of Object.entries(scalarRawAll[m])) {
+            scalarDataRef.current[m]![geoId] = v < 0 ? -1 : Math.log1p(v);
+          }
+        }
+
         partisanLeanRef.current = leanData;
         geoIdByIndexRef.current = indexMaps;
       } catch (err) {
@@ -503,6 +523,9 @@ export default function App() {
       const repVotes: number[] | null = available.includes('E_20_PRES_Rep')
         ? Array.from(plan.district_totals('E_20_PRES_Rep'))
         : null;
+      const landM2: number[] | null = available.includes('land_m2')
+        ? Array.from(plan.district_totals('land_m2'))
+        : null;
 
       const ethnicCols = ['White', 'Black', 'Hispanic', 'Asian', 'Native', 'Pacific'] as const;
       const ethnicTotals: Record<string, number[] | null> = {};
@@ -523,6 +546,8 @@ export default function App() {
           deviation: ideal > 0 ? ((pop - ideal) / ideal) * 100 : 0,
           demVotes: demVotes?.[i] ?? 0,
           repVotes: repVotes?.[i] ?? 0,
+          areaSqKm: landM2 ? landM2[i] / 1e6 : 0,
+          populationDensity: landM2 && landM2[i] > 0 ? pop / (landM2[i] / 1e6) : 0,
           whitePct: pct(ethnicTotals['White']),
           blackPct: pct(ethnicTotals['Black']),
           hispanicPct: pct(ethnicTotals['Hispanic']),
@@ -625,6 +650,18 @@ export default function App() {
                   const pct = (d[statKey] as number) / 100;
                   const color = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
                   return [d.district, color];
+                }),
+                '#888888',
+              ];
+            }
+            const isScalar = SCALAR_METRICS.includes(districtColorMetric as ScalarMetric);
+            if (isScalar && districtStats && districtStats.length > 0) {
+              const metric = districtColorMetric as ScalarMetric;
+              const statKey = SCALAR_STAT_KEYS[metric];
+              return [
+                'match', ['get', 'district'],
+                ...districtStats.flatMap(d => {
+                  return [d.district, rampColor(Math.log1p(d[statKey] as number), SCALAR_COLOR_RAMPS[metric])];
                 }),
                 '#888888',
               ];
@@ -756,6 +793,63 @@ export default function App() {
         map.on('sourcedata', handleSourceData);
         return () => {
           map.off('moveend', updateEthnicityStates);
+          map.off('sourcedata', handleSourceData);
+        };
+      } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric) && visualizationMode !== 'districts') {
+        const metric = districtColorMetric as ScalarMetric;
+        const stateKey = `scalar_${metric}`;
+        const zeroPop = '#d8d8d8';
+        const ramp = SCALAR_COLOR_RAMPS[metric];
+        const scalarPaint: any = [
+          'case',
+          ['!=', ['feature-state', stateKey], null],
+          [
+            'case',
+            ['<', ['feature-state', stateKey], 0], zeroPop,
+            ['interpolate', ['linear'], ['feature-state', stateKey], ...ramp.flat()],
+          ],
+          '#ffffff',
+        ];
+        for (const layerName of allLayers) {
+          const fillLayerId = `units-${layerName}-fill`;
+          const lineLayerId = `units-${layerName}-line`;
+          if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', scalarPaint);
+          if (map.getLayer(lineLayerId)) map.setPaintProperty(lineLayerId, 'line-opacity', 0);
+        }
+
+        const updateScalarStates = () => {
+          const metricData = scalarDataRef.current[metric];
+          if (!metricData) return;
+          for (const layerName of allLayers) {
+            const fillLayerId = `units-${layerName}-fill`;
+            if (!map.getLayer(fillLayerId)) continue;
+            const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+            const indexMap = geoIdByIndexRef.current[layerName];
+            if (!indexMap) continue;
+            for (const feature of features) {
+              const featureId = feature.id;
+              const index = feature.properties?.index;
+              if (!index) continue;
+              const geoId = indexMap[parseInt(index)];
+              if (!geoId) continue;
+              const value = metricData[String(geoId)];
+              if (value !== undefined) {
+                map.setFeatureState(
+                  { source: sourceId, sourceLayer: layerName, id: featureId },
+                  { [stateKey]: value }
+                );
+              }
+            }
+          }
+        };
+        updateScalarStates();
+        const handleSourceData = (e: any) => {
+          if (e.sourceId === sourceId && e.isSourceLoaded) updateScalarStates();
+        };
+        map.on('moveend', updateScalarStates);
+        map.on('sourcedata', handleSourceData);
+        return () => {
+          map.off('moveend', updateScalarStates);
           map.off('sourcedata', handleSourceData);
         };
       } else {
@@ -1183,7 +1277,7 @@ export default function App() {
           onRefreshDistricts={computeDistrictGeometries}
           onClearAssignments={handleClearAssignments}
           districtColorMetric={districtColorMetric}
-          onDistrictColorMetricChange={setDistrictColorMetric}
+          onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
           districtStats={districtStats}
           districtSwatchColors={districtSwatchColors}
           wasmLoading={wasmLoading}

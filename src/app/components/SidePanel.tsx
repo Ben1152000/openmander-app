@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Users, TrendingUp, AlertCircle, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import type { DistrictStat } from '@/app/constants/metrics';
 
 const STATE_DISTRICTS: Record<string, number> = {
@@ -37,8 +37,8 @@ interface SidePanelProps {
   onOptimize: () => void;
   onRefreshDistricts: () => void;
   onClearAssignments: () => void;
-  districtColorMetric: 'default' | 'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes' | 'white_pct' | 'black_pct' | 'hispanic_pct' | 'asian_pct' | 'native_pct' | 'pacific_pct';
-  onDistrictColorMetricChange: (m: 'default' | 'partisan' | 'dem_pct' | 'rep_pct' | 'dem_votes' | 'rep_votes' | 'white_pct' | 'black_pct' | 'hispanic_pct' | 'asian_pct' | 'native_pct' | 'pacific_pct') => void;
+  districtColorMetric: string;
+  onDistrictColorMetricChange: (m: string) => void;
   districtStats: DistrictStat[] | null;
   districtSwatchColors: Record<number, string>;
   wasmLoading: boolean;
@@ -165,19 +165,15 @@ export function SidePanel(props: SidePanelProps) {
                     <th className="text-left py-2 pl-6 pr-3 font-medium">District</th>
                     <th className="text-right py-2 px-3 font-medium">Population</th>
                     <th className="text-right py-2 px-3 font-medium">Deviation</th>
-                    <th className="text-right py-1 pl-3 pr-6 font-medium">
+                    <th className="text-right py-1 pl-3 pr-6 font-medium w-1/3">
                       <select
                         value={districtColorMetric}
                         onChange={e => onDistrictColorMetricChange(e.target.value as typeof districtColorMetric)}
-                        className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right"
+                        className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
                       >
-                        <option value="default">Default</option>
-                        <option value="partisan">Partisan</option>
-                        <option value="dem_pct">Dem %</option>
-                        <option value="rep_pct">Rep %</option>
-                        <option value="dem_votes">Dem Votes</option>
-                        <option value="rep_votes">Rep Votes</option>
-                        <optgroup label="Ethnicity (2020 Census)" />
+                        <option value="default">District Color</option>
+                        <option value="partisan">Partisan Lean</option>
+                        <option value="population_density">Pop. Density</option>
                         <option value="white_pct">% White</option>
                         <option value="black_pct">% Black</option>
                         <option value="hispanic_pct">% Hispanic</option>
@@ -205,16 +201,14 @@ export function SidePanel(props: SidePanelProps) {
                       switch (districtColorMetric) {
                         case 'default': return { label: '—', className: 'text-muted-foreground' };
                         case 'partisan': return { label: leanLabel, className: leanClass };
-                        case 'dem_pct': return { label: twoParty > 0 ? `${(d.demVotes / twoParty * 100).toFixed(1)}%` : '—', className: 'text-blue-600' };
-                        case 'rep_pct': return { label: twoParty > 0 ? `${(d.repVotes / twoParty * 100).toFixed(1)}%` : '—', className: 'text-red-600' };
-                        case 'dem_votes': return { label: Math.round(d.demVotes).toLocaleString(), className: 'text-blue-600' };
-                        case 'rep_votes': return { label: Math.round(d.repVotes).toLocaleString(), className: 'text-red-600' };
+                        case 'population_density': return { label: `${Math.round(d.populationDensity).toLocaleString()}/km²`, className: '' };
                         case 'white_pct': return { label: `${d.whitePct.toFixed(1)}%`, className: '' };
                         case 'black_pct': return { label: `${d.blackPct.toFixed(1)}%`, className: '' };
                         case 'hispanic_pct': return { label: `${d.hispanicPct.toFixed(1)}%`, className: '' };
                         case 'asian_pct': return { label: `${d.asianPct.toFixed(1)}%`, className: '' };
                         case 'native_pct': return { label: `${d.nativePct.toFixed(1)}%`, className: '' };
                         case 'pacific_pct': return { label: `${d.pacificPct.toFixed(1)}%`, className: '' };
+                        default: return { label: '—', className: 'text-muted-foreground' };
                       }
                     })();
 
@@ -361,34 +355,63 @@ export function SidePanel(props: SidePanelProps) {
                 Load Map
               </Button>
 
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Redistricting Metrics</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users className="size-4 text-muted-foreground" />
-                      <span className="text-sm">Total Population</span>
-                    </div>
-                    <span className="text-sm">12,807,140</span>
+              {districtStats && districtStats.length > 0 && (() => {
+                const totalPop = districtStats.reduce((s, d) => s + d.population, 0);
+                const maxDev = Math.max(...districtStats.map(d => Math.abs(d.deviation)));
+                const totalDem = districtStats.reduce((s, d) => s + d.demVotes, 0);
+                const totalRep = districtStats.reduce((s, d) => s + d.repVotes, 0);
+                const twoParty = totalDem + totalRep;
+                const lean = twoParty > 0 ? (totalDem - totalRep) / twoParty : null;
+                const wpct = (key: keyof DistrictStat) =>
+                  totalPop > 0
+                    ? districtStats.reduce((s, d) => s + (d[key] as number) * d.population, 0) / totalPop
+                    : 0;
+                const Stat = ({ label, value }: { label: string; value: string }) => (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span>{value}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="size-4 text-muted-foreground" />
-                      <span className="text-sm">Avg. Compactness</span>
-                    </div>
-                    <span className="text-sm">0.78</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="size-4 text-muted-foreground" />
-                      <span className="text-sm">Max Deviation</span>
-                    </div>
-                    <span className="text-sm">0.5%</span>
-                  </div>
-                </CardContent>
-              </Card>
+                );
+                return (
+                  <>
+                    <Card>
+                      <CardHeader className="pb-3"><CardTitle className="text-base">Population</CardTitle></CardHeader>
+                      <CardContent className="space-y-2">
+                        <Stat label="Total" value={totalPop.toLocaleString()} />
+                        <Stat label="Max deviation" value={`±${maxDev.toFixed(2)}%`} />
+                      </CardContent>
+                    </Card>
+                    {lean !== null && (
+                      <Card>
+                        <CardHeader className="pb-3"><CardTitle className="text-base">Partisan Lean</CardTitle></CardHeader>
+                        <CardContent className="space-y-2">
+                          <Stat
+                            label="Overall"
+                            value={lean > 0 ? `D+${(lean * 100).toFixed(1)}%` : lean < 0 ? `R+${(-lean * 100).toFixed(1)}%` : 'Even'}
+                          />
+                          <Stat label="Dem votes" value={totalDem.toLocaleString()} />
+                          <Stat label="Rep votes" value={totalRep.toLocaleString()} />
+                          <Stat
+                            label="Districts won"
+                            value={`D ${districtStats.filter(d => d.demVotes > d.repVotes).length} – R ${districtStats.filter(d => d.repVotes > d.demVotes).length}`}
+                          />
+                        </CardContent>
+                      </Card>
+                    )}
+                    <Card>
+                      <CardHeader className="pb-3"><CardTitle className="text-base">Demographics (2020)</CardTitle></CardHeader>
+                      <CardContent className="space-y-2">
+                        <Stat label="White"    value={`${wpct('whitePct').toFixed(1)}%`} />
+                        <Stat label="Hispanic" value={`${wpct('hispanicPct').toFixed(1)}%`} />
+                        <Stat label="Black"    value={`${wpct('blackPct').toFixed(1)}%`} />
+                        <Stat label="Asian"    value={`${wpct('asianPct').toFixed(1)}%`} />
+                        <Stat label="Native"   value={`${wpct('nativePct').toFixed(1)}%`} />
+                        <Stat label="Pacific"  value={`${wpct('pacificPct').toFixed(1)}%`} />
+                      </CardContent>
+                    </Card>
+                  </>
+                );
+              })()}
             </>
           )}
 

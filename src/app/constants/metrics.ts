@@ -7,6 +7,8 @@ export interface DistrictStat {
   deviation: number; // % deviation from ideal
   demVotes: number;
   repVotes: number;
+  areaSqKm: number;
+  populationDensity: number; // people per km²
   whitePct: number;
   blackPct: number;
   hispanicPct: number;
@@ -14,6 +16,13 @@ export interface DistrictStat {
   nativePct: number;
   pacificPct: number;
 }
+
+export type ScalarMetric = 'population_density';
+export const SCALAR_METRICS: ScalarMetric[] = ['population_density'];
+
+export const SCALAR_STAT_KEYS: Record<ScalarMetric, keyof DistrictStat> = {
+  population_density: 'populationDensity',
+};
 
 export const ETHNICITY_METRICS = [
   'white_pct', 'black_pct', 'hispanic_pct', 'asian_pct', 'native_pct', 'pacific_pct',
