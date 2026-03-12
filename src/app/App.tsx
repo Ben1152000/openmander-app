@@ -936,7 +936,7 @@ export default function App() {
     setDistrictGeoJson(null);
     setTimeout(() => {
       try {
-        plan.tabu_balance('TOTPOP', 100, 10, 0.5, 50);
+        plan.equalize("T_20_CENS_Total", 0.00001, 300)
         setPlanUpdateTrigger((prev) => prev + 1);
         computeDistrictGeometries();
       } catch (err) {

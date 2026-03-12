@@ -171,15 +171,15 @@ export function SidePanel(props: SidePanelProps) {
                         onChange={e => onDistrictColorMetricChange(e.target.value as typeof districtColorMetric)}
                         className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
                       >
-                        <option value="default">District Color</option>
-                        <option value="partisan">Partisan Lean</option>
-                        <option value="population_density">Pop. Density</option>
-                        <option value="white_pct">% White</option>
-                        <option value="black_pct">% Black</option>
-                        <option value="hispanic_pct">% Hispanic</option>
-                        <option value="asian_pct">% Asian</option>
-                        <option value="native_pct">% Native</option>
-                        <option value="pacific_pct">% Pacific</option>
+                        <option value="default">Color</option>
+                        <option value="partisan">Partisan</option>
+                        <option value="population_density">Density</option>
+                        <option value="white_pct">White %</option>
+                        <option value="black_pct">Black %</option>
+                        <option value="hispanic_pct">Hispanic %</option>
+                        <option value="asian_pct">Asian %</option>
+                        <option value="native_pct">Native %</option>
+                        <option value="pacific_pct">Pacific %</option>
                       </select>
                     </th>
                   </tr>
@@ -426,7 +426,7 @@ export function SidePanel(props: SidePanelProps) {
                   className="mt-2 flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="random-initialization">Random initialization</option>
-                  <option value="tabu-balance">Tabu Balance</option>
+                  <option value="pop-balance">Population balance</option>
                   <option value="shortest-splitline" disabled>Shortest Splitline</option>
                   <option value="compact-districts" disabled>Compact Districts</option>
                   <option value="population-equality" disabled>Population Equality</option>
