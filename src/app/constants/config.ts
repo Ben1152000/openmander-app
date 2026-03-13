@@ -13,6 +13,12 @@ export interface StateConfig {
   zoom: number;
 }
 
+export function getLayerForZoom(zoom: number): string {
+  if (zoom < ZOOM_THRESHOLD_COUNTY_TO_VTD) return 'county';
+  if (zoom < ZOOM_THRESHOLD_VTD_TO_BLOCK) return 'vtd';
+  return 'block';
+}
+
 export const STATE_CONFIGS: Record<string, StateConfig> = {
   illinois: {
     packDir: 'IL_2020_webpack',

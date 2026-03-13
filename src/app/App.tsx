@@ -1,176 +1,72 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import maplibregl, { Map } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { useWasm } from '@/useWasm';
-import { loadPackFromDirectory } from '@/loadPack';
-import { loadAndCachePMTiles, setPMTilesBuffer } from '@/pmtilesCache';
 import { SidePanel } from '@/app/components/SidePanel';
 import { MapViewer } from '@/app/components/MapViewer';
 import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
 import '@/App.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
-  districtColor, rampColor, partisanStepColor,
-  PARTISAN_STEPS, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, UNIT_GRAY_FILL, DISTRICT_FILL_OPACITY,
-} from './constants/colors';
-import { ETHNICITY_METRICS, ETHNICITY_COLS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS } from './constants/metrics';
-import type { DistrictStat, EthnicityMetric, ScalarMetric } from './constants/metrics';
-import {
-  ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK,
-  DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS,
+  DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
 } from './constants/config';
-
-// WKB to GeoJSON parser for MultiPolygon
-function parseWkbMultiPolygon(wkb: Uint8Array): GeoJSON.MultiPolygon | null {
-  if (wkb.length < 9) return null;
-
-  const view = new DataView(wkb.buffer, wkb.byteOffset, wkb.byteLength);
-  let offset = 0;
-
-  // Byte order (1 = little endian)
-  const byteOrder = wkb[offset++];
-  const isLittleEndian = byteOrder === 1;
-
-  const readUint32 = () => {
-    const val = isLittleEndian ? view.getUint32(offset, true) : view.getUint32(offset, false);
-    offset += 4;
-    return val;
-  };
-
-  const readFloat64 = () => {
-    const val = isLittleEndian ? view.getFloat64(offset, true) : view.getFloat64(offset, false);
-    offset += 8;
-    return val;
-  };
-
-  // Geometry type (6 = MultiPolygon)
-  const geomType = readUint32();
-  if (geomType !== 6) return null;
-
-  // Number of polygons
-  const numPolygons = readUint32();
-  const polygons: GeoJSON.Position[][][] = [];
-
-  for (let p = 0; p < numPolygons; p++) {
-    // Each polygon has its own header
-    offset++; // byte order
-    const polyType = readUint32();
-    if (polyType !== 3) continue; // Not a polygon
-
-    const numRings = readUint32();
-    const rings: GeoJSON.Position[][] = [];
-
-    for (let r = 0; r < numRings; r++) {
-      const numPoints = readUint32();
-      const ring: GeoJSON.Position[] = [];
-
-      for (let i = 0; i < numPoints; i++) {
-        const x = readFloat64();
-        const y = readFloat64();
-        ring.push([x, y]);
-      }
-
-      rings.push(ring);
-    }
-
-    polygons.push(rings);
-  }
-
-  return {
-    type: 'MultiPolygon',
-    coordinates: polygons
-  };
-}
-
-// Area-weighted centroid of a MultiPolygon (uses exterior rings only).
-function multiPolygonCentroid(mp: GeoJSON.MultiPolygon): [number, number] {
-  let totalArea = 0, cx = 0, cy = 0;
-  for (const polygon of mp.coordinates) {
-    const ring = polygon[0]; // exterior ring
-    let area = 0, rx = 0, ry = 0;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
-      area += cross;
-      rx += (ring[i][0] + ring[j][0]) * cross;
-      ry += (ring[i][1] + ring[j][1]) * cross;
-    }
-    area = Math.abs(area) / 2;
-    if (area > 0) { cx += rx / (6 * area) * area; cy += ry / (6 * area) * area; totalArea += area; }
-  }
-  return totalArea > 0 ? [cx / totalArea, cy / totalArea] : [0, 0];
-}
+import type { EthnicityMetric, ScalarMetric } from './constants/metrics';
+import { useSidebarResize } from './hooks/useSidebarResize';
+import { usePackLoader } from './hooks/usePackLoader';
+import { useMapMetrics } from './hooks/useMapMetrics';
+import { useDistrictData } from './hooks/useDistrictData';
+import { useMapLayers } from './hooks/useMapLayers';
+import { usePaintHandlers } from './hooks/usePaintHandlers';
+import { useVisualizationPaint } from './hooks/useVisualizationPaint';
 
 // PMTiles protocol handler - set up once
 let pmtilesProtocolSetup = false;
-
 function setupPmtilesProtocol() {
   if (pmtilesProtocolSetup) return;
-
   const protocol = new Protocol();
   maplibregl.addProtocol('pmtiles', protocol.tile);
-
   pmtilesProtocolSetup = true;
 }
 
-
 export default function App() {
-  // Resize state
-  const [sidebarWidth, setSidebarWidth] = useState(400);
-  const isResizing = useRef(false);
+  const { sidebarWidth, handleMouseDown } = useSidebarResize(400);
 
   // WASM and map state
   const { wasm, loading: wasmLoading, error: wasmError } = useWasm();
   const mapRef = useRef<Map | null>(null);
   const mapDivRef = useRef<HTMLDivElement | null>(null);
-  
+
   const [plan, setPlan] = useState<any>(null);
   const planRef = useRef<any>(null);
-  const [mapData, setMapData] = useState<{ wasmMap?: any; wasmMapProxy?: any; packFiles?: Record<string, Uint8Array> } | null>(null);
-  const wasmMapRef = useRef<any>(null);
   const [numDistricts, setNumDistricts] = useState(DEFAULT_NUM_DISTRICTS);
   const [loadedState, setLoadedState] = useState('illinois');
   const [mapInitialized, setMapInitialized] = useState(false);
   const [planUpdateTrigger, setPlanUpdateTrigger] = useState(0);
-  
-  // Loading states
-  const [loadingPack, setLoadingPack] = useState(false);
-  const [loadingStatus, setLoadingStatus] = useState<string>('');
-  const [pmtilesBufferReady, setPmtilesBufferReady] = useState(false);
-  
+
+  // Loading state (shared across hooks via setLoadingStatus)
+  const [loadingStatus, setLoadingStatus] = useState('');
+
   // Level-of-detail: track current layer
   const [currentZoom, setCurrentZoom] = useState<number>(DEFAULT_ZOOM);
   const [activeLayer, setActiveLayer] = useState<string>(DEFAULT_LAYER);
   const [currentLayer, setCurrentLayer] = useState<string>(DEFAULT_LAYER);
   const previousLayerRef = useRef<string>(DEFAULT_LAYER);
-  const featureHashesRef = useRef<Record<string, string>>({});
   const activeLayerRef = useRef<string>(DEFAULT_LAYER);
   const loadedSourcesRef = useRef<Set<string>>(new Set());
   const [sourcesVersion, setSourcesVersion] = useState(0);
 
   // Assignments and painting
   const assignmentsRef = useRef<Record<string, number>>({});
+  const featureHashesRef = useRef<Record<string, string>>({});
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
-  const paintMode = drawingTool === 'paint';
   const [districtCounts, setDistrictCounts] = useState<Record<number, number>>({});
-  
+
   // Visualization mode
   const [visualizationMode, setVisualizationMode] = useState<'districts' | 'partisan'>('districts');
   const visualizationModeRef = useRef<'districts' | 'partisan'>('districts');
-  const partisanLeanRef = useRef<Record<string, number>>({});
-  const ethnicityDataRef = useRef<Partial<Record<EthnicityMetric, Record<string, number>>>>({});
-  const scalarDataRef = useRef<Partial<Record<ScalarMetric, Record<string, number>>>>({});
-  const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
-  const districtLayersAddedRef = useRef<boolean>(false);
-  const districtGeoJsonLoadedRef = useRef<GeoJSON.FeatureCollection | null>(null);
 
-  // Cached district geometries and stats
-  const [districtGeoJson, setDistrictGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
-  const [_computingDistricts, setComputingDistricts] = useState(false);
-  const computingDistrictsRef = useRef(false);
-  const pendingComputeRef = useRef(false);
-  const [districtStats, setDistrictStats] = useState<DistrictStat[] | null>(null);
-  // District table color metric (also controls district overlay color on map)
+  // District table color metric
   const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
 
   // Automation settings
@@ -178,808 +74,44 @@ export default function App() {
   const [popTolerance, setPopTolerance] = useState(0.00001);
   const [popIterations, setPopIterations] = useState(300);
 
-  // Swatch colors for the districts table — matches district view colors
-  const districtSwatchColors = useMemo((): Record<number, string> => {
-    if (!districtStats) return {};
-    const result: Record<number, string> = {};
-    for (const d of districtStats) {
-      if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
-        const metric = districtColorMetric as EthnicityMetric;
-        const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
-        const pct = (d[ETHNICITY_STAT_KEYS[metric]] as number) / 100;
-        result[d.district] = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
-      } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
-        const metric = districtColorMetric as ScalarMetric;
-        const raw = d[SCALAR_STAT_KEYS[metric]] as number;
-        result[d.district] = rampColor(Math.log1p(raw), SCALAR_COLOR_RAMPS[metric]);
-      } else if (districtColorMetric === 'partisan') {
-        const total = d.demVotes + d.repVotes;
-        const lean = total > 0 ? (d.demVotes - d.repVotes) / total : 0;
-        result[d.district] = partisanStepColor(lean);
-      } else {
-        result[d.district] = d.color;
-      }
-    }
-    return result;
-  }, [districtStats, districtColorMetric]);
-
   // Tab state
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'analysis' | 'debug'>('summary');
 
-  // Resize handlers
-  const handleMouseDown = () => {
-    isResizing.current = true;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isResizing.current) return;
-    const newWidth = e.clientX;
-    if (newWidth >= 300 && newWidth <= 600) {
-      setSidebarWidth(newWidth);
-    }
-  };
-
-  const handleMouseUp = () => {
-    isResizing.current = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-  };
-
-  // Add event listeners for resize
-  useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  // Determine which layer to show based on zoom level
-  const getLayerForZoom = (zoom: number): string => {
-    if (zoom < ZOOM_THRESHOLD_COUNTY_TO_VTD) return 'county';
-    if (zoom < ZOOM_THRESHOLD_VTD_TO_BLOCK) return 'vtd';
-    return 'block';
-  };
-
-  // Load pack data for the current state
-  useEffect(() => {
-    if (!wasm) return;
-
-    const config = STATE_CONFIGS[loadedState];
-    if (!config) return;
-
-    const controller = new AbortController();
-    const { signal } = controller;
-
-    const loadPack = async () => {
-      // Free old WASM objects before loading new state, to release WASM heap memory
-      // immediately rather than waiting for JS garbage collection.
-      if (planRef.current) {
-        planRef.current.free?.();
-        planRef.current = null;
-        setPlan(null);
-      }
-      if (wasmMapRef.current) {
-        wasmMapRef.current.free?.();
-        wasmMapRef.current = null;
-      }
-
-      setPmtilesBufferReady(false);
-      setMapData(null);
-      setLoadingPack(true);
-      setLoadingStatus('Loading pack files...');
-      try {
-        const packPath = `/packs/${config.packDir}`;
-        const packFiles = await loadPackFromDirectory(packPath, (current, total, fileName) => {
-          if (fileName) {
-            setLoadingStatus(`Loading pack files... (${current}/${total}) - ${fileName}`);
-          } else {
-            setLoadingStatus(`Loading pack files... (${current}/${total})`);
-          }
-        }, signal);
-
-        if (signal.aborted) return;
-
-        setLoadingStatus('Downloading geometry tiles...');
-        const pmtilesBuffer = await loadAndCachePMTiles(
-          `${packPath}/geom/geometries.pmtiles`,
-          (loaded, total) => {
-            const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
-            setLoadingStatus(`Downloading geometry tiles... ${percent}%`);
-          },
-          signal,
-        );
-
-        if (signal.aborted) return;
-
-        setPMTilesBuffer(pmtilesBuffer);
-        setPmtilesBufferReady(true);
-
-        setLoadingStatus('Initializing map...');
-        await new Promise(resolve => {
-          requestAnimationFrame(() => { requestAnimationFrame(resolve); });
-        });
-
-        if (signal.aborted) return;
-
-        const { WasmMap } = wasm as any;
-        const wasmMap = new WasmMap(packFiles);
-        wasmMapRef.current = wasmMap;
-        setMapData({ wasmMap, packFiles });
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return;
-        console.error(`Failed to load ${loadedState} pack:`, err);
-        setLoadingStatus('Error loading pack');
-      } finally {
-        if (!signal.aborted) {
-          setLoadingPack(false);
-          setLoadingStatus('');
-        }
-      }
-    };
-
-    loadPack();
-    return () => controller.abort();
-  }, [wasm, loadedState]);
-  
-  // Load partisan lean data from CSV files
-  useEffect(() => {
-    if (!mapData?.packFiles) return;
-    
-    const loadPartisanData = async () => {
-      const packFiles = mapData.packFiles;
-      if (!packFiles) return;
-      
-      try {
-        const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-        const leanData: Record<string, number> = {};
-        const indexMaps: Record<string, Record<number, string>> = {};
-
-        // Accumulate raw scalar values across all layers; converted to log scale after the loop.
-        const scalarRawAll: Record<ScalarMetric, Record<string, number>> = {
-          population_density: {},
-        };
-
-        for (const layerName of allLayers) {
-          const csvFile = packFiles[`data/${layerName}.csv`];
-          if (!csvFile) {
-            console.warn(`${layerName} CSV file not found`);
-            continue;
-          }
-          
-          const csvText = new TextDecoder().decode(csvFile);
-          const lines = csvText.split('\n');
-          const headers = lines[0].split(',');
-          
-          const idxIdx = headers.indexOf('idx');
-          const geoIdIdx = headers.indexOf('geo_id');
-          const demIdx = headers.indexOf('E_20_PRES_Dem');
-          const repIdx = headers.indexOf('E_20_PRES_Rep');
-          const censTotalIdx = headers.indexOf('T_20_CENS_Total');
-          const landM2Idx = headers.indexOf('land_m2');
-          const ethnicColIdxs = Object.fromEntries(
-            ETHNICITY_METRICS.map(m => [m, headers.indexOf(ETHNICITY_COLS[m])])
-          ) as Record<EthnicityMetric, number>;
-
-          if (idxIdx === -1 || geoIdIdx === -1) {
-            console.warn(`Required columns not found in ${layerName} CSV`);
-            continue;
-          }
-
-          const ethnicLayerData: Partial<Record<EthnicityMetric, Record<string, number>>> = {};
-          for (const m of ETHNICITY_METRICS) {
-            if (ethnicColIdxs[m] !== -1 && censTotalIdx !== -1) {
-              ethnicLayerData[m] = {};
-            }
-          }
-
-          const indexToGeoId: Record<number, string> = {};
-
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-
-            const cols = line.split(',');
-            const idx = parseInt(cols[idxIdx]);
-            const geoId = cols[geoIdIdx];
-
-            indexToGeoId[idx] = geoId;
-
-            const censTotal = censTotalIdx !== -1 ? (parseFloat(cols[censTotalIdx]) || 0) : -1;
-            if (censTotal === 0) {
-              leanData[geoId] = -2; // sentinel: zero population
-            } else if (demIdx !== -1 && repIdx !== -1) {
-              const dem = parseFloat(cols[demIdx]) || 0;
-              const rep = parseFloat(cols[repIdx]) || 0;
-              const total = dem + rep;
-              if (total > 0) leanData[geoId] = (dem - rep) / total;
-            }
-
-            if (censTotalIdx !== -1) {
-              const censTotal = parseFloat(cols[censTotalIdx]) || 0;
-              const landM2 = landM2Idx !== -1 ? (parseFloat(cols[landM2Idx]) || 0) : 0;
-              scalarRawAll.population_density[geoId] = censTotal > 0 && landM2 > 0 ? censTotal / (landM2 / 1e6) : -1;
-              for (const m of ETHNICITY_METRICS) {
-                const colIdx = ethnicColIdxs[m];
-                if (colIdx !== -1 && ethnicLayerData[m]) {
-                  ethnicLayerData[m]![geoId] = censTotal > 0
-                    ? (parseFloat(cols[colIdx]) || 0) / censTotal
-                    : -1; // sentinel: zero population
-                }
-              }
-            }
-          }
-
-          for (const m of ETHNICITY_METRICS) {
-            if (ethnicLayerData[m]) {
-              if (!ethnicityDataRef.current[m]) ethnicityDataRef.current[m] = {};
-              Object.assign(ethnicityDataRef.current[m]!, ethnicLayerData[m]);
-            }
-          }
-
-          indexMaps[layerName] = indexToGeoId;
-        }
-
-        // Convert raw density to log scale; ramp thresholds are absolute (fixed intervals).
-        for (const m of SCALAR_METRICS) {
-          scalarDataRef.current[m] = {};
-          for (const [geoId, v] of Object.entries(scalarRawAll[m])) {
-            scalarDataRef.current[m]![geoId] = v < 0 ? -1 : Math.log1p(v);
-          }
-        }
-
-        partisanLeanRef.current = leanData;
-        geoIdByIndexRef.current = indexMaps;
-      } catch (err) {
-        console.error('Failed to load partisan data:', err);
-      }
-    };
-    
-    loadPartisanData();
-  }, [mapData]);
-
-  // Compute district geometries when explicitly requested (not automatically)
-  const computeDistrictGeometries = async () => {
-    if (!plan) return;
-
-    // Use a ref for the guard so rapid clicks see the up-to-date value
-    // rather than stale React state.
-    if (computingDistrictsRef.current) {
-      pendingComputeRef.current = true;
-      return;
-    }
-
-    computingDistrictsRef.current = true;
-    setComputingDistricts(true);
-
-    try {
-      const geometries = plan.district_geometries_wkb();
-      const features: GeoJSON.Feature[] = [];
-
-      // Pre-compute partisan lean per district for the overlay
-      const available: string[] = plan.series();
-      const demTotals: number[] | null = available.includes('E_20_PRES_Dem')
-        ? Array.from(plan.district_totals('E_20_PRES_Dem'))
-        : null;
-      const repTotals: number[] | null = available.includes('E_20_PRES_Rep')
-        ? Array.from(plan.district_totals('E_20_PRES_Rep'))
-        : null;
-
-      for (const { district, wkb } of geometries) {
-        const multiPolygon = parseWkbMultiPolygon(wkb);
-        if (multiPolygon && multiPolygon.coordinates.length > 0) {
-          const dem = demTotals?.[district - 1] ?? 0;
-          const rep = repTotals?.[district - 1] ?? 0;
-          const total = dem + rep;
-          const partisanLean = total > 0 ? (dem - rep) / total : 0;
-          features.push({
-            type: 'Feature',
-            properties: {
-              district,
-              color: districtColor(district - 1),
-              partisanLean,
-            },
-            geometry: multiPolygon
-          });
-        }
-      }
-
-      setDistrictGeoJson({ type: 'FeatureCollection', features });
-    } catch (err) {
-      console.error('Failed to compute district geometries:', err);
-      setDistrictGeoJson(null);
-    } finally {
-      computingDistrictsRef.current = false;
-      const hasPending = pendingComputeRef.current;
-      pendingComputeRef.current = false;
-
-      if (hasPending) {
-        // Another randomize ran while we were computing — recompute with latest plan
-        computeDistrictGeometries();
-      } else {
-        setComputingDistricts(false);
-        setLoadingStatus('');
-      }
-    }
-  };
-
-
-  // Compute per-district stats when plan changes
-  useEffect(() => {
-    if (!plan) {
-      setDistrictStats(null);
-      return;
-    }
-    try {
-      const available: string[] = plan.series();
-      const populations: number[] = available.includes('T_20_CENS_Total')
-        ? Array.from(plan.district_totals('T_20_CENS_Total'))
-        : [];
-
-      const total = populations.reduce((a, b) => a + b, 0);
-      const ideal = populations.length > 0 ? total / populations.length : 0;
-
-      const demVotes: number[] | null = available.includes('E_20_PRES_Dem')
-        ? Array.from(plan.district_totals('E_20_PRES_Dem'))
-        : null;
-      const repVotes: number[] | null = available.includes('E_20_PRES_Rep')
-        ? Array.from(plan.district_totals('E_20_PRES_Rep'))
-        : null;
-      const landM2: number[] | null = available.includes('land_m2')
-        ? Array.from(plan.district_totals('land_m2'))
-        : null;
-
-      const ethnicCols = ['White', 'Black', 'Hispanic', 'Asian', 'Native', 'Pacific'] as const;
-      const ethnicTotals: Record<string, number[] | null> = {};
-      for (const group of ethnicCols) {
-        const col = `T_20_CENS_${group}`;
-        ethnicTotals[group] = available.includes(col)
-          ? Array.from(plan.district_totals(col))
-          : null;
-      }
-
-      setDistrictStats(populations.map((pop, i) => {
-        const pct = (arr: number[] | null) =>
-          arr && pop > 0 ? (arr[i] / pop) * 100 : 0;
-        return {
-          district: i + 1,
-          color: districtColor(i),
-          population: pop,
-          deviation: ideal > 0 ? ((pop - ideal) / ideal) * 100 : 0,
-          demVotes: demVotes?.[i] ?? 0,
-          repVotes: repVotes?.[i] ?? 0,
-          areaSqKm: landM2 ? landM2[i] / 1e6 : 0,
-          populationDensity: landM2 && landM2[i] > 0 ? pop / (landM2[i] / 1e6) : 0,
-          whitePct: pct(ethnicTotals['White']),
-          blackPct: pct(ethnicTotals['Black']),
-          hispanicPct: pct(ethnicTotals['Hispanic']),
-          asianPct: pct(ethnicTotals['Asian']),
-          nativePct: pct(ethnicTotals['Native']),
-          pacificPct: pct(ethnicTotals['Pacific']),
-        };
-      }));
-    } catch (err) {
-      console.error('Failed to compute district stats:', err);
-      setDistrictStats(null);
-    }
-  }, [planUpdateTrigger, plan]);
-
-  // Handle visualization mode changes
-  useEffect(() => {
-    visualizationModeRef.current = visualizationMode;
-
-    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) {
-      return;
-    }
-
-    const map = mapRef.current;
-    const sourceId = 'units-all';
-    const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-    const districtSourceId = 'district-boundaries';
-
-    // Helper to remove district overlay layers
-    const removeDistrictOverlay = () => {
-      if (map.getLayer('district-labels')) map.removeLayer('district-labels');
-      if (map.getLayer('district-boundaries-fill')) {
-        map.removeLayer('district-boundaries-fill');
-      }
-      if (map.getLayer('district-boundaries-line')) {
-        map.removeLayer('district-boundaries-line');
-      }
-      if (map.getSource(districtSourceId)) {
-        map.removeSource(districtSourceId);
-      }
-      districtLayersAddedRef.current = false;
-      districtGeoJsonLoadedRef.current = null;
-    };
-
-    // --- District overlay: add once, update data/paint on change ---
-    if (districtGeoJson && districtGeoJson.features.length > 0) {
-      if (!map.getSource(districtSourceId)) {
-        map.addSource(districtSourceId, { type: 'geojson', data: districtGeoJson });
-        map.addLayer({
-          id: 'district-boundaries-fill',
-          type: 'fill',
-          source: districtSourceId,
-          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.60 },
-        });
-        map.addLayer({
-          id: 'district-boundaries-line',
-          type: 'line',
-          source: districtSourceId,
-          paint: { 'line-color': '#333333', 'line-width': 1.5, 'line-opacity': 1.0 },
-        });
-        map.addLayer({
-          id: 'district-labels',
-          type: 'symbol',
-          source: districtSourceId,
-          layout: {
-            'text-field': ['to-string', ['get', 'district']],
-            'text-size': 14,
-            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-            'text-allow-overlap': false,
-            'visibility': visualizationMode === 'districts' ? 'visible' : 'none',
-          },
-          paint: {
-            'text-color': '#111111',
-            'text-halo-color': '#ffffff',
-            'text-halo-width': 2,
-          },
-        });
-        districtLayersAddedRef.current = true;
-        districtGeoJsonLoadedRef.current = districtGeoJson;
-      } else if (districtGeoJsonLoadedRef.current !== districtGeoJson) {
-        (map.getSource(districtSourceId) as any).setData(districtGeoJson);
-        districtGeoJsonLoadedRef.current = districtGeoJson;
-      }
-
-      if (visualizationMode === 'districts') {
-        // Step expression using backend breakpoint intervals, colors sampled from
-        // the frontend red↔gray↔blue ramp at each interval's midpoint.
-        const fillColor: any = districtColorMetric === 'partisan'
-          ? ['step', ['get', 'partisanLean'],
-              PARTISAN_STEPS[0][1],
-              ...PARTISAN_STEPS.flatMap(([val, color]) => [val, color])]
-          : (() => {
-            const isEthnic = ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric);
-            if (isEthnic && districtStats && districtStats.length > 0) {
-              const metric = districtColorMetric as EthnicityMetric;
-              const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
-              const statKey = ETHNICITY_STAT_KEYS[metric];
-              return [
-                'match', ['get', 'district'],
-                ...districtStats.flatMap(d => {
-                  const pct = (d[statKey] as number) / 100;
-                  const color = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
-                  return [d.district, color];
-                }),
-                '#888888',
-              ];
-            }
-            const isScalar = SCALAR_METRICS.includes(districtColorMetric as ScalarMetric);
-            if (isScalar && districtStats && districtStats.length > 0) {
-              const metric = districtColorMetric as ScalarMetric;
-              const statKey = SCALAR_STAT_KEYS[metric];
-              return [
-                'match', ['get', 'district'],
-                ...districtStats.flatMap(d => {
-                  return [d.district, rampColor(Math.log1p(d[statKey] as number), SCALAR_COLOR_RAMPS[metric])];
-                }),
-                '#888888',
-              ];
-            }
-            return ['get', 'color'];
-          })();
-        map.setPaintProperty('district-boundaries-fill', 'fill-color', fillColor);
-        map.setPaintProperty('district-boundaries-fill', 'fill-opacity', 0.60);
-        if (map.getLayer('district-labels')) {
-          map.setLayoutProperty('district-labels', 'visibility', 'visible');
-        }
-      } else {
-        map.setPaintProperty('district-boundaries-fill', 'fill-opacity', 0);
-        if (map.getLayer('district-labels')) {
-          map.setLayoutProperty('district-labels', 'visibility', 'none');
-        }
-      }
-    } else {
-      removeDistrictOverlay();
-    }
-
-    // --- Base layer coloring ---
-    // Metric-based coloring (partisan/ethnicity) applies in both District and Map view.
-    // Default coloring falls back to visualizationMode.
-    if (districtColorMetric === 'partisan' && visualizationMode !== 'districts') {
-        const partisanPaint: any = [
-          'case',
-          ['!=', ['feature-state', 'partisanLean'], null],
-          [
-            'case',
-            ['<', ['feature-state', 'partisanLean'], -1.5], '#d8d8d8',
-            ['interpolate', ['linear'], ['feature-state', 'partisanLean'],
-              -1, '#990000', -0.5, '#ff4040', 0, '#e8e8e8', 0.5, '#4040ff', 1, '#000099'],
-          ],
-          '#e8e8e8'
-        ];
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          const lineLayerId = `units-${layerName}-line`;
-          if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', partisanPaint);
-          if (map.getLayer(lineLayerId)) map.setPaintProperty(lineLayerId, 'line-opacity', 0);
-        }
-
-        const updatePartisanStates = () => {
-          for (const layerName of allLayers) {
-            const fillLayerId = `units-${layerName}-fill`;
-            if (!map.getLayer(fillLayerId)) continue;
-            const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
-            const indexMap = geoIdByIndexRef.current[layerName];
-            if (!indexMap) continue;
-            for (const feature of features) {
-              const featureId = feature.id;
-              const index = feature.properties?.index;
-              if (!index) continue;
-              const geoId = indexMap[parseInt(index)];
-              if (!geoId) continue;
-              const lean = partisanLeanRef.current[String(geoId)];
-              if (lean !== undefined) {
-                map.setFeatureState(
-                  { source: sourceId, sourceLayer: layerName, id: featureId },
-                  { partisanLean: lean }
-                );
-              }
-            }
-          }
-        };
-        updatePartisanStates();
-        const handleSourceData = (e: any) => {
-          if (e.sourceId === sourceId && e.isSourceLoaded) updatePartisanStates();
-        };
-        map.on('moveend', updatePartisanStates);
-        map.on('sourcedata', handleSourceData);
-        return () => {
-          map.off('moveend', updatePartisanStates);
-          map.off('sourcedata', handleSourceData);
-        };
-      } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric) && visualizationMode !== 'districts') {
-        const metric = districtColorMetric as EthnicityMetric;
-        const stateKey = `conc_${metric.replace('_pct', '')}`;
-        const [stops, zeroGroupColor, zeroPopColor] = ETHNICITY_COLOR_RANGE[metric];
-        const ethnicPaint: any = [
-          'case',
-          ['!=', ['feature-state', stateKey], null],
-          [
-            'case',
-            ['<', ['feature-state', stateKey], 0], zeroPopColor,
-            ['==', ['feature-state', stateKey], 0], zeroGroupColor,
-            ['interpolate', ['linear'], ['feature-state', stateKey], ...stops.flat()],
-          ],
-          stops[0][1],
-        ];
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          const lineLayerId = `units-${layerName}-line`;
-          if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', ethnicPaint);
-          if (map.getLayer(lineLayerId)) map.setPaintProperty(lineLayerId, 'line-opacity', 0);
-        }
-
-        const updateEthnicityStates = () => {
-          const metricData = ethnicityDataRef.current[metric];
-          if (!metricData) return;
-          for (const layerName of allLayers) {
-            const fillLayerId = `units-${layerName}-fill`;
-            if (!map.getLayer(fillLayerId)) continue;
-            const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
-            const indexMap = geoIdByIndexRef.current[layerName];
-            if (!indexMap) continue;
-            for (const feature of features) {
-              const featureId = feature.id;
-              const index = feature.properties?.index;
-              if (!index) continue;
-              const geoId = indexMap[parseInt(index)];
-              if (!geoId) continue;
-              const concentration = metricData[String(geoId)];
-              if (concentration !== undefined) {
-                map.setFeatureState(
-                  { source: sourceId, sourceLayer: layerName, id: featureId },
-                  { [stateKey]: concentration }
-                );
-              }
-            }
-          }
-        };
-        updateEthnicityStates();
-        const handleSourceData = (e: any) => {
-          if (e.sourceId === sourceId && e.isSourceLoaded) updateEthnicityStates();
-        };
-        map.on('moveend', updateEthnicityStates);
-        map.on('sourcedata', handleSourceData);
-        return () => {
-          map.off('moveend', updateEthnicityStates);
-          map.off('sourcedata', handleSourceData);
-        };
-      } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric) && visualizationMode !== 'districts') {
-        const metric = districtColorMetric as ScalarMetric;
-        const stateKey = `scalar_${metric}`;
-        const zeroPop = '#d8d8d8';
-        const ramp = SCALAR_COLOR_RAMPS[metric];
-        const scalarPaint: any = [
-          'case',
-          ['!=', ['feature-state', stateKey], null],
-          [
-            'case',
-            ['<', ['feature-state', stateKey], 0], zeroPop,
-            ['interpolate', ['linear'], ['feature-state', stateKey], ...ramp.flat()],
-          ],
-          '#ffffff',
-        ];
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          const lineLayerId = `units-${layerName}-line`;
-          if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', scalarPaint);
-          if (map.getLayer(lineLayerId)) map.setPaintProperty(lineLayerId, 'line-opacity', 0);
-        }
-
-        const updateScalarStates = () => {
-          const metricData = scalarDataRef.current[metric];
-          if (!metricData) return;
-          for (const layerName of allLayers) {
-            const fillLayerId = `units-${layerName}-fill`;
-            if (!map.getLayer(fillLayerId)) continue;
-            const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
-            const indexMap = geoIdByIndexRef.current[layerName];
-            if (!indexMap) continue;
-            for (const feature of features) {
-              const featureId = feature.id;
-              const index = feature.properties?.index;
-              if (!index) continue;
-              const geoId = indexMap[parseInt(index)];
-              if (!geoId) continue;
-              const value = metricData[String(geoId)];
-              if (value !== undefined) {
-                map.setFeatureState(
-                  { source: sourceId, sourceLayer: layerName, id: featureId },
-                  { [stateKey]: value }
-                );
-              }
-            }
-          }
-        };
-        updateScalarStates();
-        const handleSourceData = (e: any) => {
-          if (e.sourceId === sourceId && e.isSourceLoaded) updateScalarStates();
-        };
-        map.on('moveend', updateScalarStates);
-        map.on('sourcedata', handleSourceData);
-        return () => {
-          map.off('moveend', updateScalarStates);
-          map.off('sourcedata', handleSourceData);
-        };
-      } else {
-        // Default metric: gray in District View, district colors in Map View
-        const grayFill = 'rgba(230, 230, 230, 0.5)';
-        const paint = visualizationMode === 'districts'
-          ? grayFill
-          : ['match', ['feature-state', 'district'],
-              ...Array.from({ length: 50 }, (_, i) => [i + 1, districtColor(i)]).flat(),
-              grayFill];
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          const lineLayerId = `units-${layerName}-line`;
-          if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', paint);
-          if (map.getLayer(lineLayerId)) {
-            const lineOpacity = layerName === activeLayerRef.current ? 0.5 : 0;
-            map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
-          }
-        }
-      }
-  }, [visualizationMode, districtColorMetric, mapInitialized, districtGeoJson, sourcesVersion, districtStats, currentLayer]);
-
-  // Create plan from WASM when mapData and numDistricts are available
-  useEffect(() => {
-    if (!wasm || !mapData?.wasmMap || !numDistricts) return;
-
-    try {
-      // Free old plan before creating a new one (numDistricts change)
-      if (planRef.current) {
-        planRef.current.free?.();
-        planRef.current = null;
-      }
-      const { WasmPlan } = wasm as any;
-      const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
-      planRef.current = newPlan;
-      setPlan(newPlan);
-      setDistrictGeoJson(null);
-      setPlanUpdateTrigger((prev) => prev + 1);
-    } catch (err) {
-      console.error('Failed to create plan:', err);
-    }
-  }, [wasm, mapData, numDistricts]);
-
-  // Update assignments ref when plan changes
-  useEffect(() => {
-    if (!plan || activeLayer !== 'block') return;
-
-    try {
-      const assignmentsObj = plan.assignments_dict();
-      if (assignmentsObj && typeof assignmentsObj === 'object') {
-        const assignmentsDict = assignmentsObj as Record<string, number>;
-        assignmentsRef.current = assignmentsDict;
-        
-        const counts: Record<number, number> = {};
-        for (const district of Object.values(assignmentsDict)) {
-          counts[district] = (counts[district] ?? 0) + 1;
-        }
-        setDistrictCounts(counts);
-      }
-    } catch (err) {
-      console.error('Failed to get assignments from plan:', err);
-    }
-  }, [planUpdateTrigger, plan, activeLayer]);
-
-  const handleRunAutomation = () => {
-    if (!plan) return;
-    setLoadingStatus('Creating plan...');
-    setDistrictGeoJson(null);
-
-    setTimeout(() => {
-      try {
-        if (algorithm === 'random-initialization') {
-          plan.randomize();
-        } else if (algorithm === 'pop-balance') {
-          plan.equalize("T_20_CENS_Total", popTolerance, popIterations);
-        }
-
-        setPlanUpdateTrigger((prev) => prev + 1);
-        computeDistrictGeometries();
-      } catch (err) {
-        console.error('Failed to run automation:', err);
-        setLoadingStatus('');
-      }
-    }, 0);
-  };
-
-  const handleLoadMap = (state: string, districts: number) => {
-    if (state === loadedState && districts === numDistricts) return;
-    assignmentsRef.current = {};
-    setDistrictCounts({});
-    setDistrictGeoJson(null);
-    if (state !== loadedState) {
-      // Reset pmtilesBufferReady in the same render as loadedState so the map
-      // source effect sees pmtilesBufferReady=false immediately and doesn't try
-      // to load the new state's tiles with the old state's cached buffer.
-      setPmtilesBufferReady(false);
-    }
-    setLoadedState(state);
-    setNumDistricts(districts);
-  };
-
-  const handleClearAssignments = () => {
-    assignmentsRef.current = {};
-    setDistrictCounts({});
-    if (mapRef.current && currentLayer === 'block') {
-      const sourceId = 'units-all';
-      const fillLayerId = `units-${currentLayer}-fill`;
-      const features = mapRef.current.queryRenderedFeatures({ layers: [fillLayerId] });
-      for (const feature of features) {
-        const geoId = feature.properties?.geo_id;
-        if (geoId) {
-          mapRef.current.setFeatureState(
-            { source: sourceId, sourceLayer: currentLayer, id: geoId },
-            { district: null }
-          );
-        }
-      }
-    }
-  };
+  // Pack loading (fetches pack files, PMTiles buffer, constructs WasmMap)
+  const { mapData, loadingPack, pmtilesBufferReady, resetPmtilesBuffer } = usePackLoader(
+    wasm,
+    loadedState,
+    setLoadingStatus,
+    () => {
+      if (planRef.current) { planRef.current.free?.(); planRef.current = null; setPlan(null); }
+    },
+  );
+
+  // CSV metric data (refs, no re-render)
+  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef } = useMapMetrics(mapData?.packFiles);
+
+  // District geometries, stats, swatch colors
+  const { districtGeoJson, setDistrictGeoJson, districtStats, districtSwatchColors, computeDistrictGeometries } =
+    useDistrictData(plan, planUpdateTrigger, districtColorMetric, setLoadingStatus);
+
+  // Map layers (PMTiles vector tile source setup)
+  useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef });
+
+  // Paint/erase click handlers
+  usePaintHandlers({ mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict, assignmentsRef, setDistrictCounts, featureHashesRef });
+
+  // Visualization paint (district overlay + base layer coloring)
+  useVisualizationPaint({
+    mapRef, mapInitialized, sourcesVersion,
+    visualizationMode, visualizationModeRef, districtColorMetric,
+    districtGeoJson, districtStats, currentLayer,
+    activeLayerRef, geoIdByIndexRef, partisanLeanRef, ethnicityDataRef, scalarDataRef,
+  });
 
   // Initialize map only once
   useEffect(() => {
     if (!mapDivRef.current || mapRef.current) return;
 
-    // Set up PMTiles protocol handler FIRST, before creating the map
     setupPmtilesProtocol();
 
     const map = new maplibregl.Map({
@@ -995,8 +127,6 @@ export default function App() {
     mapRef.current = map;
 
     map.on('load', () => {
-      // Use 'zoom' event (fires during zoom) instead of 'zoomend' (fires after)
-      // This makes layer transitions instant when crossing thresholds
       map.on('zoom', () => {
         const zoom = map.getZoom();
         const newLayer = getLayerForZoom(zoom);
@@ -1007,18 +137,13 @@ export default function App() {
           activeLayerRef.current = newLayer;
 
           const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-
-          for (const layerName of allLayers) {
-            const fillLayerId = `units-${layerName}-fill`;
-            const lineLayerId = `units-${layerName}-line`;
-            const isActive = layerName === newLayer;
-
-            if (map.getLayer(fillLayerId)) {
-              map.setPaintProperty(fillLayerId, 'fill-opacity', isActive ? 0.7 : 0);
-            }
-            if (map.getLayer(lineLayerId)) {
+          for (const name of allLayers) {
+            const isActive = name === newLayer;
+            if (map.getLayer(`units-${name}-fill`))
+              map.setPaintProperty(`units-${name}-fill`, 'fill-opacity', isActive ? 0.7 : 0);
+            if (map.getLayer(`units-${name}-line`)) {
               const lineOpacity = !isActive || visualizationModeRef.current === 'partisan' ? 0 : 0.5;
-              map.setPaintProperty(lineLayerId, 'line-opacity', lineOpacity);
+              map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
             }
           }
 
@@ -1035,223 +160,89 @@ export default function App() {
       setActiveLayer(initialLayer);
       setCurrentLayer(initialLayer);
       setCurrentZoom(initialZoom);
-
       setMapInitialized(true);
     });
 
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
       setMapInitialized(false);
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Set up PMTiles vector tile source
+  // Create plan from WASM when mapData and numDistricts are available
   useEffect(() => {
-    if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
-
-    const config = STATE_CONFIGS[loadedState];
-    if (!config) return;
-
-    const map = mapRef.current;
-    const sourceId = 'units-all';
-    const allLayerNames = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-
-    // Remove existing layers and source before re-adding for new state
-    for (const layerName of allLayerNames) {
-      if (map.getLayer(`units-${layerName}-fill`)) map.removeLayer(`units-${layerName}-fill`);
-      if (map.getLayer(`units-${layerName}-line`)) map.removeLayer(`units-${layerName}-line`);
+    if (!wasm || !mapData?.wasmMap || !numDistricts) return;
+    try {
+      if (planRef.current) { planRef.current.free?.(); planRef.current = null; }
+      const { WasmPlan } = wasm as any;
+      const newPlan = new WasmPlan(mapData.wasmMap, numDistricts);
+      planRef.current = newPlan;
+      setPlan(newPlan);
+      setDistrictGeoJson(null);
+      setPlanUpdateTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error('Failed to create plan:', err);
     }
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
-    loadedSourcesRef.current.delete('all');
+  }, [wasm, mapData, numDistricts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    {
-      const pmtilesUrl = `pmtiles:///packs/${config.packDir}/geom/geometries.pmtiles`;
-      setLoadingStatus(`Loading geometry layers...`);
+  // Sync assignments ref from plan when plan or layer changes
+  useEffect(() => {
+    if (!plan || activeLayer !== 'block') return;
+    try {
+      const dict = plan.assignments_dict() as Record<string, number>;
+      if (dict && typeof dict === 'object') {
+        assignmentsRef.current = dict;
+        const counts: Record<number, number> = {};
+        for (const d of Object.values(dict)) counts[d] = (counts[d] ?? 0) + 1;
+        setDistrictCounts(counts);
+      }
+    } catch (err) {
+      console.error('Failed to get assignments from plan:', err);
+    }
+  }, [planUpdateTrigger, plan, activeLayer]);
 
+  const handleRunAutomation = () => {
+    if (!plan) return;
+    setLoadingStatus('Creating plan...');
+    setDistrictGeoJson(null);
+    setTimeout(() => {
       try {
-        map.addSource(sourceId, {
-          type: 'vector',
-          url: pmtilesUrl,
-          scheme: 'xyz',
-          bounds: config.pmtilesBounds,
-        } as any);
-
-        const fillPaint: any = {
-          'fill-color': [
-            'case',
-            ['!=', ['feature-state', 'partisanLean'], null],
-            [
-              'interpolate',
-              ['linear'],
-              ['feature-state', 'partisanLean'],
-              -1, '#ff0000',
-              -0.5, '#ff8080',
-              0, '#e8e8e8',
-              0.5, '#8080ff',
-              1, '#0000ff'
-            ],
-            [
-              'match',
-              ['feature-state', 'district'],
-              ...Array.from({ length: 50 }, (_, i) => [i + 1, districtColor(i)]).flat(),
-              'rgba(0,0,0,0)'
-            ]
-          ],
-          'fill-opacity': 0,
-          'fill-opacity-transition': { duration: 0 },
-          'fill-antialias': true,
-        };
-
-        const linePaint: any = {
-          'line-width': 1.0,
-          'line-color': 'rgba(0,0,0,0.7)',
-          'line-opacity': 0,
-          'line-opacity-transition': { duration: 0 },
-          'line-gap-width': 0,
-          'line-blur': 0.5
-        };
-
-        const lineLayout: any = {
-          'line-cap': 'round',
-          'line-join': 'round'
-        };
-
-        // Determine initial active layer
-        const initialLayer = getLayerForZoom(map.getZoom());
-
-        const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
-        for (const layerName of allLayers) {
-          const fillLayerId = `units-${layerName}-fill`;
-          const lineLayerId = `units-${layerName}-line`;
-          const isActive = layerName === initialLayer;
-
-          map.addLayer({
-            id: fillLayerId,
-            type: 'fill',
-            source: sourceId,
-            'source-layer': layerName,
-            paint: {
-              ...fillPaint,
-              'fill-opacity': isActive ? 0.7 : 0,
-            },
-          });
-
-          map.addLayer({
-            id: lineLayerId,
-            type: 'line',
-            source: sourceId,
-            'source-layer': layerName,
-            paint: {
-              ...linePaint,
-              'line-opacity': isActive ? 1 : 0,
-            },
-            layout: lineLayout,
-          });
-        }
-
-        loadedSourcesRef.current.add('all');
-        setSourcesVersion(v => v + 1);
-
-        const source = map.getSource(sourceId) as any;
-
-        source.on('error', () => {
-          setLoadingStatus(`Error loading geometry layers`);
-        });
-
-        map.jumpTo({ center: config.center, zoom: config.zoom });
-
-        // Clear loading status once MapLibre has finished all pending work.
-        // 'idle' is more reliable than 'sourcedata' — the latter can fire before
-        // the source is fully ready or be missed if the source loads synchronously.
-        map.once('idle', () => setLoadingStatus(''));
+        if (algorithm === 'random-initialization') plan.randomize();
+        else if (algorithm === 'pop-balance') plan.equalize('T_20_CENS_Total', popTolerance, popIterations);
+        setPlanUpdateTrigger(prev => prev + 1);
+        computeDistrictGeometries();
       } catch (err) {
-        console.error('Failed to add PMTiles source:', err);
-        setLoadingStatus(`Error: Failed to load geometry layers`);
+        console.error('Failed to run automation:', err);
+        setLoadingStatus('');
+      }
+    }, 0);
+  };
+
+  const handleLoadMap = (state: string, districts: number) => {
+    if (state === loadedState && districts === numDistricts) return;
+    assignmentsRef.current = {};
+    setDistrictCounts({});
+    setDistrictGeoJson(null);
+    if (state !== loadedState) resetPmtilesBuffer();
+    setLoadedState(state);
+    setNumDistricts(districts);
+  };
+
+  const handleClearAssignments = () => {
+    assignmentsRef.current = {};
+    setDistrictCounts({});
+    if (mapRef.current && currentLayer === 'block') {
+      const fillLayerId = `units-${currentLayer}-fill`;
+      const features = mapRef.current.queryRenderedFeatures({ layers: [fillLayerId] });
+      for (const feature of features) {
+        const geoId = feature.properties?.geo_id;
+        if (geoId) mapRef.current.setFeatureState({ source: 'units-all', sourceLayer: currentLayer, id: geoId }, { district: null });
       }
     }
-  }, [mapInitialized, pmtilesBufferReady, loadedState]);
-
-
-  // Set up map event handlers for paint mode
-  useEffect(() => {
-    if (!mapRef.current || !mapInitialized) return;
-
-    const map = mapRef.current;
-    const fillLayerId = `units-${currentLayer}-fill`;
-
-    if (!map.getLayer(fillLayerId)) return;
-
-    const handleMouseMove = () => {
-      if (drawingTool === 'paint') map.getCanvas().style.cursor = 'crosshair';
-      else if (drawingTool === 'erase') map.getCanvas().style.cursor = 'cell';
-      else map.getCanvas().style.cursor = 'pointer';
-    };
-
-    const handleMouseLeave = () => {
-      map.getCanvas().style.cursor = '';
-    };
-
-    const handleClick = (e: any) => {
-      if (drawingTool === 'pan') return;
-      const f = e.features?.[0] as any;
-      const id: string = String(f?.properties?.geo_id ?? '');
-      if (!id) return;
-
-      const sourceId = 'units-all';
-
-      if (drawingTool === 'erase') {
-        const prevDistrict = assignmentsRef.current[id];
-        if (prevDistrict == null) return;
-        delete assignmentsRef.current[id];
-        setDistrictCounts((c) => {
-          const next = { ...c };
-          next[prevDistrict] = (next[prevDistrict] ?? 1) - 1;
-          if (next[prevDistrict] <= 0) delete next[prevDistrict];
-          return next;
-        });
-        map.setFeatureState(
-          { source: sourceId, sourceLayer: currentLayer, id },
-          { district: null }
-        );
-        delete featureHashesRef.current[id];
-        return;
-      }
-
-      // paint
-      const prevDistrict = assignmentsRef.current[id];
-      assignmentsRef.current[id] = activeDistrict;
-      setDistrictCounts((c) => {
-        const next = { ...c };
-        if (prevDistrict != null) {
-          next[prevDistrict] = (next[prevDistrict] ?? 1) - 1;
-        }
-        next[activeDistrict] = (next[activeDistrict] ?? 0) + 1;
-        return next;
-      });
-      map.setFeatureState(
-        { source: sourceId, sourceLayer: currentLayer, id },
-        { district: activeDistrict }
-      );
-      featureHashesRef.current[id] = `${id}:${activeDistrict}`;
-    };
-
-    map.on('mousemove', fillLayerId, handleMouseMove);
-    map.on('mouseleave', fillLayerId, handleMouseLeave);
-    map.on('click', fillLayerId, handleClick);
-
-    return () => {
-      map.off('mousemove', fillLayerId, handleMouseMove);
-      map.off('mouseleave', fillLayerId, handleMouseLeave);
-      map.off('click', fillLayerId, handleClick);
-    };
-  }, [drawingTool, activeDistrict, mapInitialized, currentLayer]);
+  };
 
   return (
     <div className="h-screen w-screen flex overflow-hidden">
-      {/* Side Panel */}
       <div className="flex-shrink-0" style={{ width: `${sidebarWidth}px` }}>
         <SidePanel
           activeTab={activeTab}
@@ -1262,7 +253,7 @@ export default function App() {
           onLoadMap={handleLoadMap}
           activeDistrict={activeDistrict}
           onActiveDistrictChange={setActiveDistrict}
-          paintMode={paintMode}
+          paintMode={drawingTool === 'paint'}
           onPaintModeChange={(enabled) => setDrawingTool(enabled ? 'paint' : 'pan')}
           visualizationMode={visualizationMode}
           onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'partisan')}
@@ -1287,14 +278,12 @@ export default function App() {
           onRunAutomation={handleRunAutomation}
         />
       </div>
-      
-      {/* Resize Handle */}
+
       <div
         onMouseDown={handleMouseDown}
         className="w-1 bg-border hover:bg-primary cursor-col-resize flex-shrink-0 transition-colors"
       />
-      
-      {/* Map */}
+
       <div className="flex-1">
         <MapViewer
           mapRef={mapRef}
