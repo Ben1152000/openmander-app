@@ -19,6 +19,19 @@ const STATE_DISTRICTS: Record<string, number> = {
   'west-virginia': 2, wisconsin: 8, wyoming: 1,
 };
 
+// Log-scale slider helpers for parameters in the automation tab.
+function logSliderToValue(t: number, min: number, max: number): number {
+  const logMin = Math.log(min);
+  const logMax = Math.log(max);
+  return Math.exp(logMin + (t / 100) * (logMax - logMin));
+}
+
+function valueToLogSlider(value: number, min: number, max: number): number {
+  const logMin = Math.log(min);
+  const logMax = Math.log(max);
+  return ((Math.log(value) - logMin) / (logMax - logMin)) * 100;
+}
+
 interface SidePanelProps {
   activeTab: 'summary' | 'districts' | 'automation' | 'analysis' | 'debug';
   onTabChange: (tab: 'summary' | 'districts' | 'automation' | 'analysis' | 'debug') => void;
@@ -33,8 +46,6 @@ interface SidePanelProps {
   visualizationMode: string;
   onVisualizationModeChange: (mode: string) => void;
   districtCounts: Record<number, number>;
-  onRandomize: () => void;
-  onOptimize: () => void;
   onRefreshDistricts: () => void;
   onClearAssignments: () => void;
   districtColorMetric: string;
@@ -46,6 +57,13 @@ interface SidePanelProps {
   currentZoom: number;
   currentLayer: string;
   loadingStatus: string;
+  algorithm: 'random-initialization' | 'pop-balance';
+  onAlgorithmChange: (algorithm: 'random-initialization' | 'pop-balance') => void;
+  popTolerance: number;
+  onPopToleranceChange: (value: number) => void;
+  popIterations: number;
+  onPopIterationsChange: (value: number) => void;
+  onRunAutomation: () => void;
 }
 
 
@@ -62,8 +80,6 @@ export function SidePanel(props: SidePanelProps) {
     visualizationMode,
     onVisualizationModeChange,
     districtCounts,
-    onRandomize,
-    onOptimize,
     onRefreshDistricts,
     onClearAssignments,
     districtColorMetric,
@@ -75,12 +91,18 @@ export function SidePanel(props: SidePanelProps) {
     currentZoom,
     currentLayer,
     loadingStatus,
+    algorithm,
+    onAlgorithmChange,
+    popTolerance,
+    onPopToleranceChange,
+    popIterations,
+    onPopIterationsChange,
+    onRunAutomation,
   } = props;
 
   const [pendingState, setPendingState] = useState('illinois');
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_DISTRICTS['illinois'] ?? numDistricts));
   const shiftHeldOnSpinner = useRef(false);
-  const [algorithm, setAlgorithm] = useState('random-initialization');
 
   const districtsError = (() => {
     const trimmed = pendingDistrictsRaw.trim();
@@ -422,7 +444,7 @@ export function SidePanel(props: SidePanelProps) {
                 <select
                   id="algorithm-select"
                   value={algorithm}
-                  onChange={(e) => setAlgorithm(e.target.value)}
+                  onChange={(e) => onAlgorithmChange(e.target.value as 'random-initialization' | 'pop-balance')}
                   className="mt-2 flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="random-initialization">Random initialization</option>
@@ -433,25 +455,64 @@ export function SidePanel(props: SidePanelProps) {
                 </select>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Compactness Weight</Label>
-                  <span className="text-sm text-muted-foreground">75%</span>
+              {algorithm === 'random-initialization' && (
+                <div className="text-sm text-muted-foreground">
+                  No parameters for this method yet.
                 </div>
-                <input
-                  type="range"
-                  defaultValue={75}
-                  min={0}
-                  max={100}
-                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                />
-              </div>
+              )}
+
+              {algorithm === 'pop-balance' && (
+                <>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Population tolerance</Label>
+                      <span className="text-sm text-muted-foreground">
+                        {popTolerance.toExponential(2)}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={valueToLogSlider(popTolerance, 1e-6, 1)}
+                      onChange={(e) => {
+                        const t = Number(e.target.value);
+                        onPopToleranceChange(logSliderToValue(t, 1e-6, 1));
+                      }}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Iterations</Label>
+                      <span className="text-sm text-muted-foreground">
+                        {Math.round(popIterations).toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={valueToLogSlider(popIterations, 1, 10000)}
+                      onChange={(e) => {
+                        const t = Number(e.target.value);
+                        onPopIterationsChange(
+                          Math.round(logSliderToValue(t, 1, 10000))
+                        );
+                      }}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1"
-                  onClick={algorithm === 'random-initialization' ? onRandomize : onOptimize}
-                  disabled={algorithm === 'random-initialization' ? !onRandomize : !onOptimize}
+                  onClick={onRunAutomation}
                 >
                   <Play className="mr-2 size-4" />
                   Generate

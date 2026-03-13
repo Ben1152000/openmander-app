@@ -173,6 +173,11 @@ export default function App() {
   // District table color metric (also controls district overlay color on map)
   const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
 
+  // Automation settings
+  const [algorithm, setAlgorithm] = useState<'random-initialization' | 'pop-balance'>('random-initialization');
+  const [popTolerance, setPopTolerance] = useState(0.00001);
+  const [popIterations, setPopIterations] = useState(300);
+
   // Swatch colors for the districts table — matches district view colors
   const districtSwatchColors = useMemo((): Record<number, string> => {
     if (!districtStats) return {};
@@ -914,33 +919,23 @@ export default function App() {
     }
   }, [planUpdateTrigger, plan, activeLayer]);
 
-  const handleRandomize = () => {
+  const handleRunAutomation = () => {
     if (!plan) return;
     setLoadingStatus('Creating plan...');
     setDistrictGeoJson(null);
-    setTimeout(() => {
-      try {
-        plan.randomize();
-        setPlanUpdateTrigger((prev) => prev + 1);
-        computeDistrictGeometries();
-      } catch (err) {
-        console.error('Failed to randomize plan:', err);
-        setLoadingStatus('');
-      }
-    }, 0);
-  };
 
-  const handleOptimize = () => {
-    if (!plan) return;
-    setLoadingStatus('Creating plan...');
-    setDistrictGeoJson(null);
     setTimeout(() => {
       try {
-        plan.equalize("T_20_CENS_Total", 0.00001, 300)
+        if (algorithm === 'random-initialization') {
+          plan.randomize();
+        } else if (algorithm === 'pop-balance') {
+          plan.equalize("T_20_CENS_Total", popTolerance, popIterations);
+        }
+
         setPlanUpdateTrigger((prev) => prev + 1);
         computeDistrictGeometries();
       } catch (err) {
-        console.error('Failed to optimize plan:', err);
+        console.error('Failed to run automation:', err);
         setLoadingStatus('');
       }
     }, 0);
@@ -1272,8 +1267,6 @@ export default function App() {
           visualizationMode={visualizationMode}
           onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'partisan')}
           districtCounts={districtCounts}
-          onRandomize={handleRandomize}
-          onOptimize={handleOptimize}
           onRefreshDistricts={computeDistrictGeometries}
           onClearAssignments={handleClearAssignments}
           districtColorMetric={districtColorMetric}
@@ -1285,6 +1278,13 @@ export default function App() {
           currentZoom={currentZoom}
           currentLayer={currentLayer}
           loadingStatus={loadingStatus}
+          algorithm={algorithm}
+          onAlgorithmChange={setAlgorithm}
+          popTolerance={popTolerance}
+          onPopToleranceChange={setPopTolerance}
+          popIterations={popIterations}
+          onPopIterationsChange={setPopIterations}
+          onRunAutomation={handleRunAutomation}
         />
       </div>
       
