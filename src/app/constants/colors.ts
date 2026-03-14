@@ -1,5 +1,26 @@
 import type { EthnicityMetric, ScalarMetric } from './metrics';
 
+// --- Partisan colors ---
+
+export const PARTISAN_DEM_CLASS = 'text-blue-600';
+export const PARTISAN_REP_CLASS = 'text-red-600';
+
+export function deviationClass(deviation: number): string {
+  return deviation >= 0 ? 'text-green-600' : 'text-red-600';
+}
+
+export function partisanLeanClass(lean: number | null): string {
+  if (lean === null || lean === 0) return '';
+  return lean > 0 ? PARTISAN_DEM_CLASS : PARTISAN_REP_CLASS;
+}
+
+export function partisanLeanLabel(lean: number | null): string {
+  if (lean === null) return '—';
+  if (lean > 0) return `D+${(lean * 100).toFixed(1)}%`;
+  if (lean < 0) return `R+${(-lean * 100).toFixed(1)}%`;
+  return 'Even';
+}
+
 // --- District colors ---
 
 const GOLDEN_ANGLE = 137.50776405;

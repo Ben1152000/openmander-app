@@ -14,8 +14,9 @@ export function useMapLayers(params: {
   setLoadingStatus: (s: string) => void;
   setSourcesVersion: React.Dispatch<React.SetStateAction<number>>;
   loadedSourcesRef: MutableRefObject<Set<string>>;
+  workerReadyRef: MutableRefObject<boolean>;
 }) {
-  const { mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef } = params;
+  const { mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef } = params;
 
   useEffect(() => {
     if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
@@ -84,7 +85,7 @@ export function useMapLayers(params: {
 
       (map.getSource(sourceId) as any).on('error', () => setLoadingStatus('Error loading geometry layers'));
       map.jumpTo({ center: config.center, zoom: config.zoom });
-      map.once('idle', () => setLoadingStatus(''));
+      map.once('idle', () => { if (workerReadyRef.current) setLoadingStatus(''); });
     } catch (err) {
       console.error('Failed to add PMTiles source:', err);
       setLoadingStatus('Error: Failed to load geometry layers');

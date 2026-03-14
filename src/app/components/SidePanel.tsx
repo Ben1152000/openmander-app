@@ -1,10 +1,12 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Label } from './ui/label';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { Play } from 'lucide-react';
 import type { DistrictStat } from '@/app/constants/metrics';
+import type { RegionStats } from '@/app/hooks/useDistrictData';
+import { partisanLeanClass, partisanLeanLabel, deviationClass } from '@/app/constants/colors';
 
 const STATE_DISTRICTS: Record<string, number> = {
   alabama: 7, alaska: 1, arizona: 9, arkansas: 4, california: 52, colorado: 8,
@@ -51,9 +53,9 @@ interface SidePanelProps {
   districtColorMetric: string;
   onDistrictColorMetricChange: (m: string) => void;
   districtStats: DistrictStat[] | null;
+  regionStats: RegionStats | null;
   districtSwatchColors: Record<number, string>;
-  wasmLoading: boolean;
-  wasmError: Error | null;
+  workerReady: boolean;
   currentZoom: number;
   currentLayer: string;
   loadingStatus: string;
@@ -73,24 +75,15 @@ export function SidePanel(props: SidePanelProps) {
     onTabChange,
     numDistricts,
     onLoadMap,
-    activeDistrict,
-    onActiveDistrictChange,
-    paintMode,
-    onPaintModeChange,
-    visualizationMode,
-    onVisualizationModeChange,
-    districtCounts,
     onRefreshDistricts,
-    onClearAssignments,
     districtColorMetric,
     onDistrictColorMetricChange,
     districtStats,
+    regionStats,
     districtSwatchColors,
-    wasmLoading,
-    wasmError,
+    workerReady,
     currentZoom,
     currentLayer,
-    loadingStatus,
     algorithm,
     onAlgorithmChange,
     popTolerance,
@@ -103,6 +96,37 @@ export function SidePanel(props: SidePanelProps) {
   const [pendingState, setPendingState] = useState('illinois');
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_DISTRICTS['illinois'] ?? numDistricts));
   const shiftHeldOnSpinner = useRef(false);
+
+  type LogEntry = { level: 'log' | 'warn' | 'error'; message: string; time: string };
+  const [consoleLogs, setConsoleLogs] = useState<LogEntry[]>([]);
+  const logEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const MAX = 500;
+    const push = (level: LogEntry['level'], args: unknown[]) => {
+      const message = args.map(a => {
+        if (typeof a === 'string') return a;
+        try { return JSON.stringify(a); } catch { return String(a); }
+      }).join(' ');
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      setConsoleLogs(prev => {
+        const next = [...prev, { level, message, time }];
+        return next.length > MAX ? next.slice(next.length - MAX) : next;
+      });
+    };
+
+    const origLog = console.log;
+    const origWarn = console.warn;
+    const origError = console.error;
+    console.log   = (...args) => { origLog(...args);   push('log',   args); };
+    console.warn  = (...args) => { origWarn(...args);  push('warn',  args); };
+    console.error = (...args) => { origError(...args); push('error', args); };
+    return () => { console.log = origLog; console.warn = origWarn; console.error = origError; };
+  }, []);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, [consoleLogs]);
 
   const districtsError = (() => {
     const trimmed = pendingDistrictsRaw.trim();
@@ -210,14 +234,8 @@ export function SidePanel(props: SidePanelProps) {
                   {districtStats.map((d) => {
                     const twoParty = d.demVotes + d.repVotes;
                     const lean = twoParty > 0 ? (d.demVotes - d.repVotes) / twoParty : null;
-                    const leanLabel = lean === null ? '—'
-                      : lean > 0 ? `D+${(lean * 100).toFixed(1)}%`
-                      : lean < 0 ? `R+${(-lean * 100).toFixed(1)}%`
-                      : 'Even';
-                    const leanClass = lean === null ? 'text-muted-foreground'
-                      : lean > 0 ? 'text-blue-600'
-                      : lean < 0 ? 'text-red-600'
-                      : 'text-muted-foreground';
+                    const leanLabel = partisanLeanLabel(lean);
+                    const leanClass = partisanLeanClass(lean);
 
                     const lastColValue = (() => {
                       switch (districtColorMetric) {
@@ -246,7 +264,7 @@ export function SidePanel(props: SidePanelProps) {
                           {Math.round(d.population).toLocaleString()}
                         </td>
                         <td className="py-3 px-3 text-right">
-                          <span className={d.deviation >= 0 ? 'text-green-600' : 'text-red-600'}>
+                          <span className={deviationClass(d.deviation)}>
                             {d.deviation >= 0 ? '+' : ''}{d.deviation.toFixed(2)}%
                           </span>
                         </td>
@@ -377,61 +395,68 @@ export function SidePanel(props: SidePanelProps) {
                 Load Map
               </Button>
 
-              {districtStats && districtStats.length > 0 && (() => {
-                const totalPop = districtStats.reduce((s, d) => s + d.population, 0);
-                const maxDev = Math.max(...districtStats.map(d => Math.abs(d.deviation)));
-                const totalDem = districtStats.reduce((s, d) => s + d.demVotes, 0);
-                const totalRep = districtStats.reduce((s, d) => s + d.repVotes, 0);
-                const twoParty = totalDem + totalRep;
-                const lean = twoParty > 0 ? (totalDem - totalRep) / twoParty : null;
-                const wpct = (key: keyof DistrictStat) =>
-                  totalPop > 0
-                    ? districtStats.reduce((s, d) => s + (d[key] as number) * d.population, 0) / totalPop
-                    : 0;
+              {regionStats && (() => {
                 const Stat = ({ label, value }: { label: string; value: string }) => (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{label}</span>
                     <span>{value}</span>
                   </div>
                 );
+                const Section = ({ title }: { title: string }) => (
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{title}</p>
+                );
+
+                const maxDev = districtStats && districtStats.some(d => d.population > 0)
+                  ? Math.max(...districtStats.map(d => Math.abs(d.deviation)))
+                  : null;
+                const twoParty = regionStats.demVotes + regionStats.repVotes;
+                const lean = twoParty > 0 ? (regionStats.demVotes - regionStats.repVotes) / twoParty : null;
+                const assignedDistricts = districtStats?.filter(d => d.population > 0) ?? [];
+
                 return (
-                  <>
-                    <Card>
-                      <CardHeader className="pb-3"><CardTitle className="text-base">Population</CardTitle></CardHeader>
-                      <CardContent className="space-y-2">
-                        <Stat label="Total" value={totalPop.toLocaleString()} />
-                        <Stat label="Max deviation" value={`±${maxDev.toFixed(2)}%`} />
-                      </CardContent>
-                    </Card>
-                    {lean !== null && (
-                      <Card>
-                        <CardHeader className="pb-3"><CardTitle className="text-base">Partisan Lean</CardTitle></CardHeader>
-                        <CardContent className="space-y-2">
-                          <Stat
-                            label="Overall"
-                            value={lean > 0 ? `D+${(lean * 100).toFixed(1)}%` : lean < 0 ? `R+${(-lean * 100).toFixed(1)}%` : 'Even'}
-                          />
-                          <Stat label="Dem votes" value={totalDem.toLocaleString()} />
-                          <Stat label="Rep votes" value={totalRep.toLocaleString()} />
-                          <Stat
-                            label="Districts won"
-                            value={`D ${districtStats.filter(d => d.demVotes > d.repVotes).length} – R ${districtStats.filter(d => d.repVotes > d.demVotes).length}`}
-                          />
-                        </CardContent>
-                      </Card>
-                    )}
-                    <Card>
-                      <CardHeader className="pb-3"><CardTitle className="text-base">Demographics (2020)</CardTitle></CardHeader>
-                      <CardContent className="space-y-2">
-                        <Stat label="White"    value={`${wpct('whitePct').toFixed(1)}%`} />
-                        <Stat label="Hispanic" value={`${wpct('hispanicPct').toFixed(1)}%`} />
-                        <Stat label="Black"    value={`${wpct('blackPct').toFixed(1)}%`} />
-                        <Stat label="Asian"    value={`${wpct('asianPct').toFixed(1)}%`} />
-                        <Stat label="Native"   value={`${wpct('nativePct').toFixed(1)}%`} />
-                        <Stat label="Pacific"  value={`${wpct('pacificPct').toFixed(1)}%`} />
-                      </CardContent>
-                    </Card>
-                  </>
+                  <Card>
+                    <CardContent className="pt-4 space-y-4">
+                      <div>
+                        <Section title="Population" />
+                        <div className="space-y-1.5">
+                          <Stat label="Total" value={regionStats.totalPop.toLocaleString()} />
+                          {maxDev !== null && (
+                            <Stat label="Max deviation" value={`±${maxDev.toFixed(2)}%`} />
+                          )}
+                        </div>
+                      </div>
+                      {lean !== null && (
+                        <div className="border-t pt-4">
+                          <Section title="Partisan Lean" />
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Overall</span>
+                              <span className={partisanLeanClass(lean)}>{partisanLeanLabel(lean)}</span>
+                            </div>
+                            <Stat label="Dem votes" value={regionStats.demVotes.toLocaleString()} />
+                            <Stat label="Rep votes" value={regionStats.repVotes.toLocaleString()} />
+                            {assignedDistricts.length > 0 && (
+                              <Stat
+                                label="Districts won"
+                                value={`D ${assignedDistricts.filter(d => d.demVotes > d.repVotes).length} – R ${assignedDistricts.filter(d => d.repVotes > d.demVotes).length}`}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <div className="border-t pt-4">
+                        <Section title="Demographics (2020)" />
+                        <div className="space-y-1.5">
+                          <Stat label="White"    value={`${regionStats.whitePct.toFixed(1)}%`} />
+                          <Stat label="Hispanic" value={`${regionStats.hispanicPct.toFixed(1)}%`} />
+                          <Stat label="Black"    value={`${regionStats.blackPct.toFixed(1)}%`} />
+                          <Stat label="Asian"    value={`${regionStats.asianPct.toFixed(1)}%`} />
+                          <Stat label="Native"   value={`${regionStats.nativePct.toFixed(1)}%`} />
+                          <Stat label="Pacific"  value={`${regionStats.pacificPct.toFixed(1)}%`} />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })()}
             </>
@@ -445,7 +470,7 @@ export function SidePanel(props: SidePanelProps) {
                   id="algorithm-select"
                   value={algorithm}
                   onChange={(e) => onAlgorithmChange(e.target.value as 'random-initialization' | 'pop-balance')}
-                  className="mt-2 flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
                 >
                   <option value="random-initialization">Random initialization</option>
                   <option value="pop-balance">Population balance</option>
@@ -457,7 +482,7 @@ export function SidePanel(props: SidePanelProps) {
 
               {algorithm === 'random-initialization' && (
                 <div className="text-sm text-muted-foreground">
-                  No parameters for this method yet.
+                  No parameters for this method.
                 </div>
               )}
 
@@ -467,7 +492,7 @@ export function SidePanel(props: SidePanelProps) {
                     <div className="flex items-center justify-between mb-2">
                       <Label>Population tolerance</Label>
                       <span className="text-sm text-muted-foreground">
-                        {popTolerance.toExponential(2)}
+                        {+(popTolerance * 100).toPrecision(2)}%
                       </span>
                     </div>
                     <input
@@ -524,14 +549,9 @@ export function SidePanel(props: SidePanelProps) {
           {activeTab === 'debug' && (
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-medium mb-2">WASM Status</h3>
-                {wasmLoading && <div className="text-sm text-muted-foreground">Loading WASM...</div>}
-                {wasmError && (
-                  <div className="text-sm text-red-600">WASM Error: {wasmError.message}</div>
-                )}
-                {!wasmLoading && !wasmError && (
-                  <div className="text-sm text-green-600">✓ WASM loaded</div>
-                )}
+                <h3 className="text-sm font-medium mb-2">Worker Status</h3>
+                {!workerReady && <div className="text-sm text-muted-foreground">Worker initializing...</div>}
+                {workerReady && <div className="text-sm text-green-600">✓ Worker ready</div>}
               </div>
 
               <div>
@@ -542,85 +562,37 @@ export function SidePanel(props: SidePanelProps) {
                 </div>
               </div>
 
+              <Button variant="outline" className="w-full" onClick={onRefreshDistricts}>
+                Refresh Districts
+              </Button>
+
               <div>
-                <h3 className="text-sm font-medium mb-2">Settings</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="active-district">Active District:</Label>
-                    <input
-                      id="active-district"
-                      type="number"
-                      value={activeDistrict}
-                      min={1}
-                      onChange={(e) => onActiveDistrictChange(parseInt(e.target.value || '1', 10))}
-                      className="w-20 h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Label>Paint Mode:</Label>
-                    <Button
-                      variant={paintMode ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => onPaintModeChange(!paintMode)}
-                    >
-                      {paintMode ? 'ON' : 'OFF'}
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Label>Visualization:</Label>
-                    <div className="flex gap-1">
-                      <Button
-                        variant={visualizationMode === 'districts' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => onVisualizationModeChange('districts')}
-                      >
-                        Districts
-                      </Button>
-                      <Button
-                        variant={visualizationMode === 'partisan' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => onVisualizationModeChange('partisan')}
-                      >
-                        Partisan
-                      </Button>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium">Console</h3>
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setConsoleLogs([])}
+                  >
+                    Clear
+                  </button>
                 </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium mb-2">Toy Metrics</h3>
-                <div className="font-mono text-xs space-y-1">
-                  {Object.keys(districtCounts).length === 0 && (
-                    <div className="text-muted-foreground">(no assignments yet)</div>
+                <div className="h-64 overflow-y-auto rounded-md border bg-muted/40 p-2 font-mono text-xs space-y-0.5">
+                  {consoleLogs.length === 0 && (
+                    <div className="text-muted-foreground italic">No messages yet.</div>
                   )}
-                  {Object.entries(districtCounts)
-                    .sort((a, b) => Number(a[0]) - Number(b[0]))
-                    .map(([d, c]) => (
-                      <div key={d}>
-                        D{d}: {String(c)} units
-                      </div>
-                    ))}
+                  {consoleLogs.map((entry, i) => (
+                    <div key={i} className={
+                      entry.level === 'error' ? 'text-red-600' :
+                      entry.level === 'warn'  ? 'text-yellow-600' :
+                      'text-foreground'
+                    }>
+                      <span className="text-muted-foreground select-none">{entry.time} </span>
+                      {entry.message}
+                    </div>
+                  ))}
+                  <div ref={logEndRef} />
                 </div>
               </div>
-
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={onClearAssignments}>
-                  Clear Assignments
-                </Button>
-                <Button variant="outline" className="flex-1" onClick={onRefreshDistricts}>
-                  Refresh Districts
-                </Button>
-              </div>
-
-              {loadingStatus && (
-                <div>
-                  <h3 className="text-sm font-medium mb-2">Status</h3>
-                  <div className="text-sm text-muted-foreground">{loadingStatus}</div>
-                </div>
-              )}
             </div>
           )}
         </div>
