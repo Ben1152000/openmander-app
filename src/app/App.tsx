@@ -261,6 +261,56 @@ export default function App() {
     planRef.current?.computeGeometries();
   };
 
+  const handleExportPlan = () => {
+    const rows = ['GEOID20,District'];
+    for (const [geoId, district] of Object.entries(assignmentsRef.current)) {
+      if (district > 0) rows.push(`${geoId},${district}`);
+    }
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${loadedState}-plan.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportPlan = (file: File) => {
+    const blockMap = geoIdByIndexRef.current['block'];
+    if (!blockMap) return;
+    const geoIdToIndex: Record<string, number> = {};
+    for (const [idx, geoId] of Object.entries(blockMap)) geoIdToIndex[geoId] = parseInt(idx);
+    const size = Object.keys(blockMap).length;
+
+    file.text().then(text => {
+      const arr = new Uint32Array(size);
+      const newAssignments: Record<string, number> = {};
+      const lines = text.split('\n');
+      const headers = lines[0].trim().split(',').map(h => h.toLowerCase());
+      const geoCol = headers.findIndex(h => h === 'geoid20' || h === 'geo_id');
+      const distCol = headers.findIndex(h => h === 'district');
+      if (geoCol === -1 || distCol === -1) { console.error('Import: could not find required columns in CSV header'); return; }
+      for (const line of lines.slice(1)) {
+        const cols = line.trim().split(',');
+        const [geoId, districtStr] = [cols[geoCol], cols[distCol]];
+        if (!geoId || !districtStr) continue;
+        const district = parseInt(districtStr);
+        const idx = geoIdToIndex[geoId];
+        if (idx != null && district > 0) {
+          arr[idx] = district;
+          newAssignments[geoId] = district;
+        }
+      }
+      assignmentsRef.current = newAssignments;
+      setDistrictCounts(
+        Object.values(newAssignments).reduce<Record<number, number>>((acc, d) => {
+          acc[d] = (acc[d] ?? 0) + 1; return acc;
+        }, {})
+      );
+      planRef.current?.setAssignments(arr);
+    });
+  };
+
   const handleLoadMap = (state: string, districts: number) => {
     assignmentsRef.current = {};
     setDistrictCounts({});
@@ -319,6 +369,8 @@ export default function App() {
           onPopIterationsChange={setPopIterations}
           automationRunning={automationRunning}
           onRunAutomation={handleRunAutomation}
+          onExportPlan={handleExportPlan}
+          onImportPlan={handleImportPlan}
         />
       </div>
 

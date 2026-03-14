@@ -95,12 +95,12 @@ export class WorkerPlan {
     this.waitingFor = null;
   }
 
-  private call(waitFor: 'ready' | 'stats', msg: object): Promise<void> {
+  private call(waitFor: 'ready' | 'stats', msg: object, transfer: Transferable[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
       this.resolve = resolve;
       this.reject = reject;
       this.waitingFor = waitFor;
-      this.worker.postMessage(msg);
+      this.worker.postMessage(msg, transfer);
     });
   }
 
@@ -126,6 +126,10 @@ export class WorkerPlan {
   /// `district`: target district (1-indexed; 0 = unassigned). Contiguity is not enforced.
   assignUnit(layer: string, geoId: string, district: number): Promise<void> {
     return this.call('stats', { type: 'assign-unit', layer, geoId, district });
+  }
+
+  setAssignments(data: Uint32Array): Promise<void> {
+    return this.call('stats', { type: 'set-assignments', data }, [data.buffer]);
   }
 
   terminate() {

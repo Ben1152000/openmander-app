@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Upload, Download } from 'lucide-react';
 
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -66,6 +67,8 @@ interface SidePanelProps {
   onPopIterationsChange: (value: number) => void;
   automationRunning: boolean;
   onRunAutomation: () => void;
+  onExportPlan: () => void;
+  onImportPlan: (file: File) => void;
 }
 
 
@@ -84,6 +87,7 @@ export function SidePanel(props: SidePanelProps) {
     regionStats,
     districtSwatchColors,
     workerReady,
+    loadingStatus,
     currentZoom,
     currentLayer,
     algorithm,
@@ -94,6 +98,8 @@ export function SidePanel(props: SidePanelProps) {
     onPopIterationsChange,
     automationRunning,
     onRunAutomation,
+    onExportPlan,
+    onImportPlan,
   } = props;
 
   const [pendingState, setPendingState] = useState('illinois');
@@ -402,7 +408,7 @@ export function SidePanel(props: SidePanelProps) {
 
               <Button
                 className="w-full"
-                disabled={!!districtsError}
+                disabled={!!districtsError || !!loadingStatus || automationRunning}
                 onClick={() => {
                   const hasData = districtStats?.some(d => d.population > 0);
                   if (hasData && !window.confirm('This will discard the current map. Are you sure?')) return;
@@ -411,6 +417,21 @@ export function SidePanel(props: SidePanelProps) {
               >
                 Create Map
               </Button>
+
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" disabled={!workerReady} onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.csv';
+                  input.onchange = () => { if (input.files?.[0]) onImportPlan(input.files[0]); };
+                  input.click();
+                }}>
+                  <Download className="w-4 h-4 mr-2" /> Import Plan
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={onExportPlan} disabled={!workerReady}>
+                  <Upload className="w-4 h-4 mr-2" /> Export Plan
+                </Button>
+              </div>
 
               {regionStats && (() => {
                 const Stat = ({ label, value }: { label: string; value: string }) => (

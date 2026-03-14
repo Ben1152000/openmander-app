@@ -155,7 +155,8 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'randomize' }
     | { type: 'equalize'; series: string; tolerance: number; maxIter: number; chunkSize?: number }
     | { type: 'compute-geometries' }
-    | { type: 'assign-unit'; layer: string; geoId: string; district: number };
+    | { type: 'assign-unit'; layer: string; geoId: string; district: number }
+    | { type: 'set-assignments'; data: Uint32Array };
 
   try {
     if (msg.type === 'init') {
@@ -216,6 +217,12 @@ self.onmessage = async (e: MessageEvent) => {
       }
 
     } else if (msg.type === 'compute-geometries') {
+      sendGeometries();
+      sendStats();
+
+    } else if (msg.type === 'set-assignments') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+      wasmPlan.set_assignments_u32(msg.data);
       sendGeometries();
       sendStats();
 
