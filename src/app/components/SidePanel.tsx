@@ -7,6 +7,7 @@ import { Card, CardContent } from './ui/card';
 import type { DistrictStat } from '@/app/constants/metrics';
 import type { RegionStats } from '@/app/hooks/useDistrictData';
 import { partisanLeanClass, partisanLeanLabel, deviationClass } from '@/app/constants/colors';
+import { RankVotesChart } from './RankVotesChart';
 
 const STATE_DISTRICTS: Record<string, number> = {
   alabama: 7, alaska: 1, arizona: 9, arkansas: 4, california: 52, colorado: 8,
@@ -77,6 +78,7 @@ export function SidePanel(props: SidePanelProps) {
     activeTab,
     onTabChange,
     numDistricts,
+    loadedState,
     onLoadMap,
     activeDistrict,
     onActiveDistrictChange,
@@ -109,6 +111,15 @@ export function SidePanel(props: SidePanelProps) {
   type LogEntry = { level: 'log' | 'warn' | 'error'; message: string; time: string };
   const [consoleLogs, setConsoleLogs] = useState<LogEntry[]>([]);
   const logEndRef = useRef<HTMLDivElement | null>(null);
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeTab]);
+
+  useEffect(() => {
+    setConsoleLogs([]);
+  }, [loadedState, numDistricts]);
 
   useEffect(() => {
     const MAX = 500;
@@ -161,56 +172,20 @@ export function SidePanel(props: SidePanelProps) {
       </div>
 
       <div className="border-b flex overflow-x-auto scrollbar-none">
-        <button
-          onClick={() => onTabChange('summary')}
-          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
-            activeTab === 'summary'
-              ? 'border-b-2 border-primary text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Summary
-        </button>
-        <button
-          onClick={() => onTabChange('districts')}
-          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
-            activeTab === 'districts'
-              ? 'border-b-2 border-primary text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Districts
-        </button>
-        <button
-          onClick={() => onTabChange('automation')}
-          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
-            activeTab === 'automation'
-              ? 'border-b-2 border-primary text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Automation
-        </button>
-        <button
-          onClick={() => onTabChange('analysis')}
-          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
-            activeTab === 'analysis'
-              ? 'border-b-2 border-primary text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Analysis
-        </button>
-        <button
-          onClick={() => onTabChange('debug')}
-          className={'flex-none px-4 py-3 text-sm font-medium transition-colors ' + (
-            activeTab === 'debug'
-              ? 'border-b-2 border-primary text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Debug
-        </button>
+        {(['summary', 'districts', 'automation', 'analysis', 'debug'] as const).map(tab => (
+          <button
+            key={tab}
+            ref={activeTab === tab ? activeTabRef : null}
+            onClick={() => onTabChange(tab)}
+            className={'flex-none px-4 py-3 text-sm font-medium transition-colors capitalize ' + (
+              activeTab === tab
+                ? 'border-b-2 border-primary text-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {tab}
+          </button>
+        ))}
       </div>
 
       <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable]">
@@ -609,6 +584,16 @@ export function SidePanel(props: SidePanelProps) {
                   <div ref={logEndRef} />
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'analysis' && (
+            <div className="space-y-6">
+              <h3 className="text-sm font-semibold">Rank-Votes Chart</h3>
+              {districtStats && districtStats.some(d => d.demVotes + d.repVotes > 0)
+                ? <div className="border rounded-lg px-3 py-1 bg-background"><RankVotesChart districtStats={districtStats} /></div>
+                : <p className="text-sm text-muted-foreground">No partisan data available. Generate a plan first.</p>
+              }
             </div>
           )}
 

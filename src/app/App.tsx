@@ -61,8 +61,8 @@ export default function App() {
   const [districtCounts, setDistrictCounts] = useState<Record<number, number>>({});
 
   // Visualization mode
-  const [visualizationMode, setVisualizationMode] = useState<'districts' | 'partisan'>('districts');
-  const visualizationModeRef = useRef<'districts' | 'partisan'>('districts');
+  const [visualizationMode, setVisualizationMode] = useState<'districts' | 'map'>('districts');
+  const visualizationModeRef = useRef<'districts' | 'map'>('districts');
 
   // District table color metric
   const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
@@ -218,7 +218,7 @@ export default function App() {
             if (map.getLayer(`units-${name}-fill`))
               map.setPaintProperty(`units-${name}-fill`, 'fill-opacity', isActive ? 0.7 : 0);
             if (map.getLayer(`units-${name}-line`)) {
-              const lineOpacity = !isActive || visualizationModeRef.current === 'partisan' ? 0 : 0.5;
+              const lineOpacity = !isActive || visualizationModeRef.current === 'map' ? 0 : 0.5;
               map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
             }
           }
@@ -277,7 +277,7 @@ export default function App() {
 
   const handleImportPlan = (file: File) => {
     const blockMap = geoIdByIndexRef.current['block'];
-    if (!blockMap) return;
+    if (!blockMap) { window.alert('Error: Map data not loaded yet.'); return; }
     const geoIdToIndex: Record<string, number> = {};
     for (const [idx, geoId] of Object.entries(blockMap)) geoIdToIndex[geoId] = parseInt(idx);
     const size = Object.keys(blockMap).length;
@@ -289,7 +289,11 @@ export default function App() {
       const headers = lines[0].trim().split(',').map(h => h.toLowerCase());
       const geoCol = headers.findIndex(h => h === 'geoid20' || h === 'geo_id');
       const distCol = headers.findIndex(h => h === 'district');
-      if (geoCol === -1 || distCol === -1) { console.error('Import: could not find required columns in CSV header'); return; }
+      if (geoCol === -1 || distCol === -1) {
+        window.alert('Error: CSV must have a GEOID20 (or geo_id) column and a District column.');
+        return;
+      }
+      let matched = 0, unmatched = 0;
       for (const line of lines.slice(1)) {
         const cols = line.trim().split(',');
         const [geoId, districtStr] = [cols[geoCol], cols[distCol]];
@@ -299,7 +303,14 @@ export default function App() {
         if (idx != null && district > 0) {
           arr[idx] = district;
           newAssignments[geoId] = district;
+          matched++;
+        } else if (geoId) {
+          unmatched++;
         }
+      }
+      if (matched === 0) {
+        window.alert(`Error: No blocks matched the loaded state. Make sure the CSV is for ${loadedState}.`);
+        return;
       }
       assignmentsRef.current = newAssignments;
       setDistrictCounts(
@@ -308,6 +319,11 @@ export default function App() {
         }, {})
       );
       planRef.current?.setAssignments(arr);
+      if (unmatched > 0) {
+        window.alert(`Imported ${matched.toLocaleString()} blocks. Warning: ${unmatched.toLocaleString()} rows did not match any block in the loaded state.`);
+      } else {
+        window.alert(`Successfully imported ${matched.toLocaleString()} block assignments.`);
+      }
     });
   };
 
@@ -315,7 +331,19 @@ export default function App() {
     assignmentsRef.current = {};
     setDistrictCounts({});
     resetDistrictData();
-    if (state !== loadedState) resetPmtilesBuffer();
+    if (state !== loadedState) {
+      resetPmtilesBuffer();
+    } else if (mapData?.packFiles && planRef.current) {
+      // Same state — mapData/numDistricts won't change so the init effect won't re-run; call init directly.
+      workerReadyRef.current = false;
+      setWorkerReady(false);
+      setLoadingStatus('Initializing plan engine...');
+      planRef.current.init(mapData.packFiles, districts).then(() => {
+        workerReadyRef.current = true;
+        setWorkerReady(true);
+        setLoadingStatus('');
+      });
+    }
     setLoadedState(state);
     setNumDistricts(districts);
   };
@@ -348,7 +376,7 @@ export default function App() {
           paintMode={drawingTool === 'paint'}
           onPaintModeChange={(enabled) => setDrawingTool(enabled ? 'paint' : 'pan')}
           visualizationMode={visualizationMode}
-          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'partisan')}
+          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
           districtCounts={districtCounts}
           onRefreshDistricts={handleRefreshDistricts}
           onClearAssignments={handleClearAssignments}
@@ -392,7 +420,9 @@ export default function App() {
             drawingTool={drawingTool}
             onDrawingToolChange={setDrawingTool}
             visualizationMode={visualizationMode}
-            onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'partisan')}
+            onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
+            districtColorMetric={districtColorMetric}
+            onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
             visible={mapInitialized && !loadingPack && !loadingStatus}
           />
         </MapViewer>

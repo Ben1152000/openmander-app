@@ -15,8 +15,8 @@ export function useVisualizationPaint(params: {
   mapRef: MutableRefObject<Map | null>;
   mapInitialized: boolean;
   sourcesVersion: number;
-  visualizationMode: 'districts' | 'partisan';
-  visualizationModeRef: MutableRefObject<'districts' | 'partisan'>;
+  visualizationMode: 'districts' | 'map';
+  visualizationModeRef: MutableRefObject<'districts' | 'map'>;
   districtColorMetric: ColorMetric;
   districtGeoJson: GeoJSON.FeatureCollection | null;
   districtStats: DistrictStat[] | null;

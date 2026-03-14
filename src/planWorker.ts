@@ -228,9 +228,7 @@ self.onmessage = async (e: MessageEvent) => {
 
     } else if (msg.type === 'assign-unit') {
       if (!wasmPlan) throw new Error('Worker not initialized');
-      log(`[Worker] assign-unit layer=${msg.layer} geoId=${msg.geoId} district=${msg.district}`);
       (wasmPlan as any).assign_unit(msg.layer, msg.geoId, msg.district);
-      log('[Worker] assign-unit done, sending geometries');
       sendGeometries();
       sendStats();
     }

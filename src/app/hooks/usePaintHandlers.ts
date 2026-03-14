@@ -40,16 +40,16 @@ export function usePaintHandlers(params: {
     const applyPaint = (featureId: string | number, geoId: string) => {
       if (drawingTool === 'erase') {
         const prev = assignmentsRef.current[geoId];
-        if (prev == null) return;
-        delete assignmentsRef.current[geoId];
-        setDistrictCounts(c => {
-          const next = { ...c };
-          next[prev] = (next[prev] ?? 1) - 1;
-          if (next[prev] <= 0) delete next[prev];
-          return next;
-        });
-        map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id: featureId }, { district: null });
-        delete featureHashesRef.current[geoId];
+        if (prev != null) {
+          delete assignmentsRef.current[geoId];
+          setDistrictCounts(c => {
+            const next = { ...c };
+            next[prev] = (next[prev] ?? 1) - 1;
+            if (next[prev] <= 0) delete next[prev];
+            return next;
+          });
+          delete featureHashesRef.current[geoId];
+        }
         onAssignUnit(currentLayer, geoId, 0);
       } else {
         const prev = assignmentsRef.current[geoId];
@@ -60,7 +60,6 @@ export function usePaintHandlers(params: {
           next[activeDistrict] = (next[activeDistrict] ?? 0) + 1;
           return next;
         });
-        map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id: featureId }, { district: activeDistrict });
         featureHashesRef.current[geoId] = `${geoId}:${activeDistrict}`;
         onAssignUnit(currentLayer, geoId, activeDistrict);
       }
