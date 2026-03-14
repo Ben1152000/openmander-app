@@ -27,6 +27,7 @@ export function useMapLayers(params: {
     const sourceId = 'units-all';
 
     // Remove existing layers/source before re-adding for new state
+    if (map.getLayer('state-outline')) map.removeLayer('state-outline');
     for (const name of ALL_LAYERS) {
       if (map.getLayer(`units-${name}-hover`)) map.removeLayer(`units-${name}-hover`);
       if (map.getLayer(`units-${name}-fill`)) map.removeLayer(`units-${name}-fill`);
@@ -87,6 +88,12 @@ export function useMapLayers(params: {
           },
         });
       }
+
+      // Permanent state outline — always visible, transparent fill
+      map.addLayer({ id: 'state-outline', type: 'line', source: sourceId, 'source-layer': 'state',
+        paint: { 'line-width': 1.0, 'line-color': 'rgba(0,0,0,0.7)', 'line-blur': 0.5 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
 
       loadedSourcesRef.current.add('all');
       setSourcesVersion(v => v + 1);
