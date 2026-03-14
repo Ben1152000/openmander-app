@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadPackFromDirectory } from '@/loadPack';
-import { loadAndCachePMTiles, setPMTilesBuffer } from '@/pmtilesCache';
+import { loadAndCachePMTiles, cacheAndSetPMTiles, setPMTilesBuffer } from '@/pmtilesCache';
 import { STATE_CONFIGS } from '@/app/constants/config';
 
 export type PackData = { packFiles: Record<string, Uint8Array> };
@@ -35,23 +35,33 @@ export function usePackLoader(
 
       try {
         const packPath = `/packs/${config.packDir}`;
-        const packFiles = await loadPackFromDirectory(packPath, (cur, total, file) => {
+        const { packFiles, pmtilesBuffer } = await loadPackFromDirectory(packPath, (cur, total, file) => {
           setLoadingStatus(`Loading pack files... (${cur}/${total})${file ? ` - ${file}` : ''}`);
         }, signal);
         if (signal.aborted) return;
 
         setLoadingStatus('Downloading geometry tiles...');
-        const pmtilesBuffer = await loadAndCachePMTiles(
-          `${packPath}/geom/geometries.pmtiles`,
-          (loaded, total) => {
-            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-            setLoadingStatus(`Downloading geometry tiles... ${pct}%`);
-          },
-          signal,
-        );
+
+        if (pmtilesBuffer !== null) {
+          // PMTiles was pre-assembled from chunks — cache it and set the buffer directly.
+          const baseUrl = window.location.origin;
+          const fullUrl = `${baseUrl}${packPath}/geom/geometries.pmtiles`;
+          await cacheAndSetPMTiles(fullUrl, pmtilesBuffer);
+        } else {
+          // PMTiles exists as a single file — use the normal download + cache path.
+          const pmtilesDownloaded = await loadAndCachePMTiles(
+            `${packPath}/geom/geometries.pmtiles`,
+            (loaded, total) => {
+              const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+              setLoadingStatus(`Downloading geometry tiles... ${pct}%`);
+            },
+            signal,
+          );
+          if (signal.aborted) return;
+          setPMTilesBuffer(pmtilesDownloaded);
+        }
         if (signal.aborted) return;
 
-        setPMTilesBuffer(pmtilesBuffer);
         setPmtilesBufferReady(true);
 
         setLoadingStatus('Initializing map...');

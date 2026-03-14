@@ -11,26 +11,34 @@ interface MapToolbarProps {
   districtColorMetric: string;
   onDistrictColorMetricChange: (metric: string) => void;
   visible: boolean;
+  workerReady: boolean;
 }
 
 
-export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, visible }: MapToolbarProps) {
+export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, visible, workerReady }: MapToolbarProps) {
   if (!visible) return null;
 
-  const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => (
-    <button
-      key={tool}
-      title={title}
-      onClick={() => onDrawingToolChange(tool)}
-      className={`p-2.5 rounded-lg transition-colors ${
-        drawingTool === tool
-          ? 'bg-blue-100 text-blue-700'
-          : 'text-gray-600 hover:bg-gray-100'
-      }`}
-    >
-      {icon}
-    </button>
-  );
+  const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => {
+    const isPaintTool = tool === 'paint' || tool === 'erase';
+    const disabled = isPaintTool && !workerReady;
+    return (
+      <button
+        key={tool}
+        title={disabled ? 'Initializing plan engine...' : title}
+        disabled={disabled}
+        onClick={() => onDrawingToolChange(tool)}
+        className={`p-2.5 rounded-lg transition-colors ${
+          disabled
+            ? 'text-gray-300 cursor-not-allowed'
+            : drawingTool === tool
+              ? 'bg-blue-100 text-blue-700'
+              : 'text-gray-600 hover:bg-gray-100'
+        }`}
+      >
+        {icon}
+      </button>
+    );
+  };
 
   return (
     <div className="absolute top-4 left-4 right-4 z-10 flex justify-between pointer-events-none">

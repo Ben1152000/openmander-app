@@ -235,8 +235,10 @@ originalFetch = globalThis.fetch;
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const urlStr = typeof input === "string" ? input : input.toString();
 
-  // If it's a geometries.pmtiles file request and we have a cached buffer, serve from cache
-  if (urlStr.includes("geometries.pmtiles") && cachedPMTilesBuffer) {
+  // If it's a geometries.pmtiles file request and we have a cached buffer, serve from cache.
+  // Use endsWith (ignoring query params) so part files (.part000 etc.) are not intercepted.
+  const urlPath = urlStr.split('?')[0];
+  if (urlPath.endsWith("geometries.pmtiles") && cachedPMTilesBuffer) {
     const method = init?.method || "GET";
 
     // Get the range header if present - handle different header formats
@@ -311,6 +313,15 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
  */
 export function setPMTilesBuffer(buffer: ArrayBuffer) {
   cachedPMTilesBuffer = buffer;
+}
+
+/**
+ * Cache an already-assembled PMTiles buffer in IndexedDB (keyed by URL) and set it
+ * for the fetch interceptor. Use this when the file was pre-assembled from chunks.
+ */
+export async function cacheAndSetPMTiles(url: string, buffer: ArrayBuffer): Promise<void> {
+  setPMTilesBuffer(buffer);
+  await cacheFile(url, buffer);
 }
 
 /**

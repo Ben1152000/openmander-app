@@ -312,6 +312,11 @@ export default function App() {
         window.alert(`Error: No blocks matched the loaded state. Make sure the CSV is for ${loadedState}.`);
         return;
       }
+      const maxDistrict = Math.max(...Object.values(newAssignments));
+      if (maxDistrict > numDistricts) {
+        window.alert(`Error: CSV contains district ${maxDistrict} but the current plan only has ${numDistricts} district${numDistricts === 1 ? '' : 's'}. Recreate the map with the correct number of districts and try again.`);
+        return;
+      }
       assignmentsRef.current = newAssignments;
       setDistrictCounts(
         Object.values(newAssignments).reduce<Record<number, number>>((acc, d) => {
@@ -423,7 +428,8 @@ export default function App() {
             onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
             districtColorMetric={districtColorMetric}
             onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
-            visible={mapInitialized && !loadingPack && !loadingStatus}
+            visible={mapInitialized && !loadingPack && pmtilesBufferReady}
+            workerReady={workerReady}
           />
         </MapViewer>
       </div>
