@@ -12,9 +12,31 @@
 //   { type: 'assignments', data: Uint32Array, done: boolean } — progress or completion (buffer transferred)
 //   { type: 'geometries', items: {district: number, wkb: Uint8Array}[] } — WKB per district (buffers transferred)
 //   { type: 'stats', districtStats: DistrictStat[], regionStats: RegionStats } — district/region stats
+//   { type: 'log', message: string }                          — forwarded console.log (worker runs off main thread)
 //   { type: 'error', message: string }
 
 import init, { WasmMap, WasmPlan } from '../wasm/pkg/openmander';
+
+// Forward logs to the main thread so they appear in the DevTools console under the page context.
+function log(message: string) {
+  (self as any).postMessage({ type: 'log', message });
+}
+
+// Intercept console methods so WASM output (web_sys::console::log etc.) is forwarded to the main thread.
+// Must run before WASM init so the patched console is in place when the module loads.
+const stringify = (arg: any): string => {
+  if (typeof arg === 'string') return arg;
+  if (arg === null || arg === undefined) return String(arg);
+  try { return JSON.stringify(arg) ?? String(arg); } catch { return String(arg); }
+};
+
+(['log', 'warn', 'error', 'info', 'debug'] as const).forEach((method) => {
+  const original = console[method].bind(console);
+  (console as any)[method] = (...args: any[]) => {
+    original(...args); // still visible in worker DevTools context
+    (self as any).postMessage({ type: 'log', message: args.map(stringify).join(' ') });
+  };
+});
 
 // Start WASM compilation immediately when the worker is spawned so it overlaps
 // with pack file fetching on the main thread instead of running sequentially.
@@ -145,12 +167,15 @@ self.onmessage = async (e: MessageEvent) => {
       lastGeometryMs = 0;
 
       sendStats();
+      log('[Worker] Ready');
       self.postMessage({ type: 'ready' });
 
     } else if (msg.type === 'randomize') {
       if (!wasmPlan) throw new Error('Worker not initialized');
 
+      log('[Worker] Randomizing...');
       wasmPlan.randomize();
+      log('[Worker] Randomize done');
 
       const assignments = new Uint32Array(wasmPlan.assignments_u32());
       (self as any).postMessage({ type: 'assignments', data: assignments, done: true }, [assignments.buffer]);
@@ -179,6 +204,7 @@ self.onmessage = async (e: MessageEvent) => {
         }
 
         if (done) {
+          if (!converged) log(`Equalization incomplete after ${maxIter} iterations`);
           sendStats();
           break;
         }

@@ -140,10 +140,15 @@ export function SidePanel(props: SidePanelProps) {
   return (
     <div className="h-full bg-background border-r flex flex-col">
       <div className="p-6 border-b">
-        <h1 className="text-2xl mb-1">OpenMander</h1>
-        <p className="text-sm text-muted-foreground">
-          Automated Congressional Redistricting
-        </p>
+        <div className="flex items-center gap-3">
+          <img src="/openmander-icon.svg" alt="OpenMander logo" className="w-14 h-14 flex-shrink-0 mr-1" />
+          <div>
+            <h1 className="text-2xl">OpenMander</h1>
+            <p className="text-sm text-muted-foreground">
+              Automated Congressional Redistricting
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="border-b flex overflow-x-auto scrollbar-none">
@@ -392,7 +397,7 @@ export function SidePanel(props: SidePanelProps) {
                 disabled={!!districtsError}
                 onClick={() => onLoadMap?.(pendingState, parseInt(pendingDistrictsRaw, 10))}
               >
-                Load Map
+                Create Map
               </Button>
 
               {regionStats && (() => {
@@ -539,32 +544,9 @@ export function SidePanel(props: SidePanelProps) {
                   className="flex-1"
                   onClick={onRunAutomation}
                 >
-                  <Play className="mr-2 size-4" />
                   Generate
                 </Button>
               </div>
-            </div>
-          )}
-
-          {activeTab === 'debug' && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium mb-2">Worker Status</h3>
-                {!workerReady && <div className="text-sm text-muted-foreground">Worker initializing...</div>}
-                {workerReady && <div className="text-sm text-green-600">✓ Worker ready</div>}
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium mb-2">Map Info</h3>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <div>Zoom: {currentZoom.toFixed(1)}</div>
-                  <div>Layer: {currentLayer}</div>
-                </div>
-              </div>
-
-              <Button variant="outline" className="w-full" onClick={onRefreshDistricts}>
-                Refresh Districts
-              </Button>
 
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -593,6 +575,28 @@ export function SidePanel(props: SidePanelProps) {
                   <div ref={logEndRef} />
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'debug' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium mb-2">Worker Status</h3>
+                {!workerReady && <div className="text-sm text-muted-foreground">Worker initializing...</div>}
+                {workerReady && <div className="text-sm text-green-600">✓ Worker ready</div>}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-medium mb-2">Map Info</h3>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <div>Zoom: {currentZoom.toFixed(1)}</div>
+                  <div>Layer: {currentLayer}</div>
+                </div>
+              </div>
+
+              <Button variant="outline" className="w-full" onClick={onRefreshDistricts}>
+                Refresh Districts
+              </Button>
             </div>
           )}
         </div>

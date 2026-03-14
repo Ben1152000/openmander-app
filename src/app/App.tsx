@@ -76,10 +76,12 @@ export default function App() {
 
   // Plan worker for background optimization
   const workerRef = useRef<Worker | null>(null);
+  const metricsWorkerRef = useRef<Worker | null>(null);
   const workerReadyRef = useRef(false);
   // Refs so the stable onMessage closure always sees the latest callbacks.
   const applyWorkerGeometriesRef = useRef<((items: any[], dem: number[] | null, rep: number[] | null) => void) | null>(null);
   const applyWorkerStatsRef = useRef<((ds: any[], rs: any) => void) | null>(null);
+  const applyMetricsRef = useRef<((pl: any, gi: any, sd: any, ed: any) => void) | null>(null);
   const setLoadingStatusRef = useRef(setLoadingStatus);
   setLoadingStatusRef.current = setLoadingStatus;
 
@@ -90,8 +92,8 @@ export default function App() {
     () => { setDistrictGeoJson(null); },
   );
 
-  // CSV metric data (refs, no re-render)
-  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef } = useMapMetrics(mapData?.packFiles);
+  // CSV metric data (refs, populated via worker 'metrics' message)
+  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, applyMetrics } = useMapMetrics();
 
   // District geometries, stats, swatch colors
   const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats } =
@@ -100,6 +102,7 @@ export default function App() {
   // Keep the refs current so the stable worker handler always calls the latest version.
   applyWorkerGeometriesRef.current = applyWorkerGeometries;
   applyWorkerStatsRef.current = applyWorkerStats;
+  applyMetricsRef.current = applyMetrics;
 
   // Map layers (PMTiles vector tile source setup)
   useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef });
@@ -119,11 +122,16 @@ export default function App() {
   const handleWorkerMessage = useCallback((e: MessageEvent) => {
     const msg = e.data;
 
-    if (msg.type === 'ready') {
-      console.log('[Worker] Ready');
+    if (msg.type === 'log') {
+      console.log(msg.message);
+
+    } else if (msg.type === 'ready') {
       workerReadyRef.current = true;
       setWorkerReady(true);
       setLoadingStatusRef.current('');
+
+    } else if (msg.type === 'metrics') {
+      applyMetricsRef.current?.(msg.partisanLean, msg.geoIdByIndex, msg.scalarData, msg.ethnicityData);
 
     } else if (msg.type === 'assignments') {
       if (msg.done) {
@@ -155,7 +163,7 @@ export default function App() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Spawn the worker eagerly on mount so WASM compilation starts in parallel with pack fetching.
+  // Spawn plan worker eagerly so WASM compilation overlaps with pack fetching.
   useEffect(() => {
     const worker = new Worker(new URL('../planWorker.ts', import.meta.url), { type: 'module' });
     worker.addEventListener('message', handleWorkerMessage);
@@ -163,15 +171,26 @@ export default function App() {
     workerRef.current = worker;
   }, [handleWorkerMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Send init message when pack files are ready — WASM is already compiling by this point.
+  // When pack files arrive, send to both workers in parallel.
   useEffect(() => {
     if (!mapData?.packFiles || !numDistricts || !workerRef.current) return;
 
+    // Plan worker: heavy WasmMap construction
     workerReadyRef.current = false;
     setWorkerReady(false);
     setDistrictGeoJson(null);
     setLoadingStatus('Initializing plan engine...');
     workerRef.current.postMessage({ type: 'init', packFiles: mapData.packFiles, numDistricts });
+
+    // Metrics worker: CSV parsing (~2.5s), runs in parallel with WasmMap (~7s)
+    const mw = new Worker(new URL('../metricsWorker.ts', import.meta.url), { type: 'module' });
+    mw.onmessage = (e) => {
+      applyMetricsRef.current?.(e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData);
+      mw.terminate();
+    };
+    mw.onerror = (e) => console.error('[MetricsWorker] Error:', e.message, e);
+    metricsWorkerRef.current = mw;
+    mw.postMessage({ packFiles: mapData.packFiles });
   }, [mapData, numDistricts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize map only once
@@ -238,7 +257,6 @@ export default function App() {
   const handleRunAutomation = () => {
     if (!workerReadyRef.current) return;
     setLoadingStatus('Creating plan...');
-    setDistrictGeoJson(null);
 
     console.log(`[Generate] algorithm=${algorithm} worker=${!!workerRef.current} ready=${workerReadyRef.current}`);
 
