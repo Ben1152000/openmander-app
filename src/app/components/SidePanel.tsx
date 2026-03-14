@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { Play } from 'lucide-react';
 import type { DistrictStat } from '@/app/constants/metrics';
 import type { RegionStats } from '@/app/hooks/useDistrictData';
 import { partisanLeanClass, partisanLeanLabel, deviationClass } from '@/app/constants/colors';
@@ -65,6 +64,7 @@ interface SidePanelProps {
   onPopToleranceChange: (value: number) => void;
   popIterations: number;
   onPopIterationsChange: (value: number) => void;
+  automationRunning: boolean;
   onRunAutomation: () => void;
 }
 
@@ -75,6 +75,8 @@ export function SidePanel(props: SidePanelProps) {
     onTabChange,
     numDistricts,
     onLoadMap,
+    activeDistrict,
+    onActiveDistrictChange,
     onRefreshDistricts,
     districtColorMetric,
     onDistrictColorMetricChange,
@@ -90,6 +92,7 @@ export function SidePanel(props: SidePanelProps) {
     onPopToleranceChange,
     popIterations,
     onPopIterationsChange,
+    automationRunning,
     onRunAutomation,
   } = props;
 
@@ -257,11 +260,16 @@ export function SidePanel(props: SidePanelProps) {
                       }
                     })();
 
+                    const isSelected = d.district === activeDistrict;
                     return (
-                      <tr key={d.district} className="border-b last:border-b-0 hover:bg-accent transition-colors">
+                      <tr
+                        key={d.district}
+                        className={`border-b last:border-b-0 hover:bg-accent transition-colors cursor-pointer ${isSelected ? 'bg-accent' : ''}`}
+                        onClick={() => onActiveDistrictChange(d.district)}
+                      >
                         <td className="py-3 pl-6 pr-3">
                           <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded" style={{ backgroundColor: districtSwatchColors[d.district] ?? d.color }} />
+                            <div className={`w-3 h-3 rounded ${isSelected ? 'ring-2 ring-foreground ring-offset-1' : ''}`} style={{ backgroundColor: districtSwatchColors[d.district] ?? d.color }} />
                             <span>{d.district}</span>
                           </div>
                         </td>
@@ -395,7 +403,11 @@ export function SidePanel(props: SidePanelProps) {
               <Button
                 className="w-full"
                 disabled={!!districtsError}
-                onClick={() => onLoadMap?.(pendingState, parseInt(pendingDistrictsRaw, 10))}
+                onClick={() => {
+                  const hasData = districtStats?.some(d => d.population > 0);
+                  if (hasData && !window.confirm('This will discard the current map. Are you sure?')) return;
+                  onLoadMap?.(pendingState, parseInt(pendingDistrictsRaw, 10));
+                }}
               >
                 Create Map
               </Button>
@@ -542,9 +554,10 @@ export function SidePanel(props: SidePanelProps) {
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1"
+                  disabled={automationRunning}
                   onClick={onRunAutomation}
                 >
-                  Generate
+                  {automationRunning ? 'Running...' : 'Generate'}
                 </Button>
               </div>
 

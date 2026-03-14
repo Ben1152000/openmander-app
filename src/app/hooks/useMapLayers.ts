@@ -28,6 +28,7 @@ export function useMapLayers(params: {
 
     // Remove existing layers/source before re-adding for new state
     for (const name of ALL_LAYERS) {
+      if (map.getLayer(`units-${name}-hover`)) map.removeLayer(`units-${name}-hover`);
       if (map.getLayer(`units-${name}-fill`)) map.removeLayer(`units-${name}-fill`);
       if (map.getLayer(`units-${name}-line`)) map.removeLayer(`units-${name}-line`);
     }
@@ -78,6 +79,13 @@ export function useMapLayers(params: {
           paint: { ...fillPaint, 'fill-opacity': isActive ? 0.7 : 0 } });
         map.addLayer({ id: `units-${name}-line`, type: 'line', source: sourceId, 'source-layer': name,
           paint: { ...linePaint, 'line-opacity': isActive ? 1 : 0 }, layout: lineLayout });
+        map.addLayer({ id: `units-${name}-hover`, type: 'fill', source: sourceId, 'source-layer': name,
+          paint: {
+            'fill-color': '#000000',
+            'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.25, 0] as any,
+            'fill-opacity-transition': { duration: 0 },
+          },
+        });
       }
 
       loadedSourcesRef.current.add('all');

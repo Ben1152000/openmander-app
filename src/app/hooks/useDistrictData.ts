@@ -97,5 +97,10 @@ export function useDistrictData(
     }));
   }, [districtStats, districtColorMetric]);
 
-  return { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats };
+  const resetDistrictData = useCallback(() => {
+    setDistrictGeoJson(null);
+    setDistrictStats(null);
+  }, []);
+
+  return { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import maplibregl, { Map } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { SidePanel } from '@/app/components/SidePanel';
@@ -17,6 +17,7 @@ import { useDistrictData } from './hooks/useDistrictData';
 import { useMapLayers } from './hooks/useMapLayers';
 import { usePaintHandlers } from './hooks/usePaintHandlers';
 import { useVisualizationPaint } from './hooks/useVisualizationPaint';
+import { WorkerPlan } from '@/workerPlan';
 
 // PMTiles protocol handler - set up once
 let pmtilesProtocolSetup = false;
@@ -67,6 +68,7 @@ export default function App() {
   const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
 
   // Automation settings
+  const [automationRunning, setAutomationRunning] = useState(false);
   const [algorithm, setAlgorithm] = useState<'random-initialization' | 'pop-balance'>('random-initialization');
   const [popTolerance, setPopTolerance] = useState(0.0001);
   const [popIterations, setPopIterations] = useState(300);
@@ -75,15 +77,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'analysis' | 'debug'>('summary');
 
   // Plan worker for background optimization
-  const workerRef = useRef<Worker | null>(null);
+  const planRef = useRef<WorkerPlan | null>(null);
   const metricsWorkerRef = useRef<Worker | null>(null);
   const workerReadyRef = useRef(false);
-  // Refs so the stable onMessage closure always sees the latest callbacks.
+  // Refs so WorkerPlan callbacks always call the latest hook-provided functions.
   const applyWorkerGeometriesRef = useRef<((items: any[], dem: number[] | null, rep: number[] | null) => void) | null>(null);
   const applyWorkerStatsRef = useRef<((ds: any[], rs: any) => void) | null>(null);
   const applyMetricsRef = useRef<((pl: any, gi: any, sd: any, ed: any) => void) | null>(null);
-  const setLoadingStatusRef = useRef(setLoadingStatus);
-  setLoadingStatusRef.current = setLoadingStatus;
 
   // Pack loading (fetches pack files, PMTiles buffer)
   const { mapData, loadingPack, pmtilesBufferReady, resetPmtilesBuffer } = usePackLoader(
@@ -93,10 +93,10 @@ export default function App() {
   );
 
   // CSV metric data (refs, populated via worker 'metrics' message)
-  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, applyMetrics } = useMapMetrics();
+  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, clearMetrics, applyMetrics } = useMapMetrics();
 
   // District geometries, stats, swatch colors
-  const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats } =
+  const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData } =
     useDistrictData(districtColorMetric);
 
   // Keep the refs current so the stable worker handler always calls the latest version.
@@ -108,7 +108,11 @@ export default function App() {
   useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef });
 
   // Paint/erase click handlers
-  usePaintHandlers({ mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict, assignmentsRef, setDistrictCounts, featureHashesRef });
+  usePaintHandlers({
+    mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict, assignmentsRef, setDistrictCounts, featureHashesRef,
+    geoIdByIndexRef, automationRunning,
+    onAssignUnit: (layer, geoId, district) => { planRef.current?.assignUnit(layer, geoId, district); },
+  });
 
   // Visualization paint (district overlay + base layer coloring)
   useVisualizationPaint({
@@ -118,71 +122,51 @@ export default function App() {
     activeLayerRef, geoIdByIndexRef, partisanLeanRef, ethnicityDataRef, scalarDataRef,
   });
 
-  // Stable worker message handler — uses refs so it never needs to be re-registered.
-  const handleWorkerMessage = useCallback((e: MessageEvent) => {
-    const msg = e.data;
-
-    if (msg.type === 'log') {
-      console.log(msg.message);
-
-    } else if (msg.type === 'ready') {
-      workerReadyRef.current = true;
-      setWorkerReady(true);
-      setLoadingStatusRef.current('');
-
-    } else if (msg.type === 'metrics') {
-      applyMetricsRef.current?.(msg.partisanLean, msg.geoIdByIndex, msg.scalarData, msg.ethnicityData);
-
-    } else if (msg.type === 'assignments') {
-      if (msg.done) {
-        const blockMap = geoIdByIndexRef.current['block'];
-        if (blockMap) {
-          const dict: Record<string, number> = {};
-          const counts: Record<number, number> = {};
-          const arr = msg.data as Uint32Array;
-          for (let i = 0; i < arr.length; i++) {
-            const d = arr[i];
-            if (d > 0) { const g = blockMap[i]; if (g) { dict[g] = d; counts[d] = (counts[d] ?? 0) + 1; } }
-          }
-          assignmentsRef.current = dict;
-          setDistrictCounts(counts);
-        }
-        setLoadingStatus('');
-      }
-
-    } else if (msg.type === 'stats') {
-      applyWorkerStatsRef.current?.(msg.districtStats, msg.regionStats);
-
-    } else if (msg.type === 'geometries') {
-      // WKB + totals computed in worker — apply on main thread (pure JS, no WASM calls)
-      applyWorkerGeometriesRef.current?.(msg.items, msg.demTotals, msg.repTotals);
-
-    } else if (msg.type === 'error') {
-      console.error('[Worker] Error:', msg.message);
-      setLoadingStatus('');
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Spawn plan worker eagerly so WASM compilation overlaps with pack fetching.
   useEffect(() => {
     const worker = new Worker(new URL('../planWorker.ts', import.meta.url), { type: 'module' });
-    worker.addEventListener('message', handleWorkerMessage);
-    worker.onerror = (e) => console.error('[Worker] Uncaught error:', e.message, e);
-    workerRef.current = worker;
-  }, [handleWorkerMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+    planRef.current = new WorkerPlan(worker, {
+      onLog: (message) => console.log(message),
+      onAssignments: (data, done) => {
+        if (done) {
+          const blockMap = geoIdByIndexRef.current['block'];
+          if (blockMap) {
+            const dict: Record<string, number> = {};
+            const counts: Record<number, number> = {};
+            for (let i = 0; i < data.length; i++) {
+              const d = data[i];
+              if (d > 0) { const g = blockMap[i]; if (g) { dict[g] = d; counts[d] = (counts[d] ?? 0) + 1; } }
+            }
+            assignmentsRef.current = dict;
+            setDistrictCounts(counts);
+          }
+          setLoadingStatus('');
+        }
+      },
+      onGeometries: (items, dem, rep) => applyWorkerGeometriesRef.current?.(items, dem, rep),
+      onStats: (ds, rs) => applyWorkerStatsRef.current?.(ds, rs),
+    });
+    return () => { planRef.current?.terminate(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When pack files arrive, send to both workers in parallel.
+  // When pack files arrive, initialise the plan worker and metrics worker in parallel.
   useEffect(() => {
-    if (!mapData?.packFiles || !numDistricts || !workerRef.current) return;
+    if (!mapData?.packFiles || !numDistricts || !planRef.current) return;
 
-    // Plan worker: heavy WasmMap construction
     workerReadyRef.current = false;
     setWorkerReady(false);
     setDistrictGeoJson(null);
+    clearMetrics();
     setLoadingStatus('Initializing plan engine...');
-    workerRef.current.postMessage({ type: 'init', packFiles: mapData.packFiles, numDistricts });
+
+    planRef.current.init(mapData.packFiles, numDistricts).then(() => {
+      workerReadyRef.current = true;
+      setWorkerReady(true);
+      setLoadingStatus('');
+    });
 
     // Metrics worker: CSV parsing (~2.5s), runs in parallel with WasmMap (~7s)
+    metricsWorkerRef.current?.terminate();
     const mw = new Worker(new URL('../metricsWorker.ts', import.meta.url), { type: 'module' });
     mw.onmessage = (e) => {
       applyMetricsRef.current?.(e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData);
@@ -198,6 +182,13 @@ export default function App() {
     if (!mapDivRef.current || mapRef.current) return;
 
     setupPmtilesProtocol();
+
+    // Suppress noisy MapLibre WebGL texture warnings (harmless deprecation notices)
+    const origWarn = console.warn.bind(console);
+    console.warn = (...args: any[]) => {
+      if (typeof args[0] === 'string' && args[0].includes('Alpha-premult')) return;
+      origWarn(...args);
+    };
 
     const map = new maplibregl.Map({
       container: mapDivRef.current,
@@ -255,32 +246,25 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRunAutomation = () => {
-    if (!workerReadyRef.current) return;
+    if (!workerReadyRef.current || !planRef.current) return;
     setLoadingStatus('Creating plan...');
-
-    console.log(`[Generate] algorithm=${algorithm} worker=${!!workerRef.current} ready=${workerReadyRef.current}`);
-
+    setAutomationRunning(true);
+    const done = () => setAutomationRunning(false);
     if (algorithm === 'random-initialization') {
-      workerRef.current!.postMessage({ type: 'randomize' });
+      planRef.current.randomize().then(done, done);
     } else if (algorithm === 'pop-balance') {
-      workerRef.current!.postMessage({
-        type: 'equalize',
-        series: 'T_20_CENS_Total',
-        tolerance: popTolerance,
-        maxIter: popIterations,
-      });
+      planRef.current.equalize('T_20_CENS_Total', popTolerance, popIterations).then(done, done);
     }
   };
 
   const handleRefreshDistricts = () => {
-    workerRef.current?.postMessage({ type: 'compute-geometries' });
+    planRef.current?.computeGeometries();
   };
 
   const handleLoadMap = (state: string, districts: number) => {
-    if (state === loadedState && districts === numDistricts) return;
     assignmentsRef.current = {};
     setDistrictCounts({});
-    setDistrictGeoJson(null);
+    resetDistrictData();
     if (state !== loadedState) resetPmtilesBuffer();
     setLoadedState(state);
     setNumDistricts(districts);
@@ -333,6 +317,7 @@ export default function App() {
           onPopToleranceChange={setPopTolerance}
           popIterations={popIterations}
           onPopIterationsChange={setPopIterations}
+          automationRunning={automationRunning}
           onRunAutomation={handleRunAutomation}
         />
       </div>

@@ -6,6 +6,7 @@
 //   { type: 'randomize' }
 //   { type: 'equalize', series: string, tolerance: number, maxIter: number, chunkSize?: number }
 //   { type: 'compute-geometries' }
+//   { type: 'assign-unit', layer: string, geoId: string, district: number }
 //
 // Messages out:
 //   { type: 'ready' }                                          — init complete
@@ -153,7 +154,8 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'init'; packFiles: Record<string, Uint8Array>; numDistricts: number }
     | { type: 'randomize' }
     | { type: 'equalize'; series: string; tolerance: number; maxIter: number; chunkSize?: number }
-    | { type: 'compute-geometries' };
+    | { type: 'compute-geometries' }
+    | { type: 'assign-unit'; layer: string; geoId: string; district: number };
 
   try {
     if (msg.type === 'init') {
@@ -214,6 +216,14 @@ self.onmessage = async (e: MessageEvent) => {
       }
 
     } else if (msg.type === 'compute-geometries') {
+      sendGeometries();
+      sendStats();
+
+    } else if (msg.type === 'assign-unit') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+      log(`[Worker] assign-unit layer=${msg.layer} geoId=${msg.geoId} district=${msg.district}`);
+      (wasmPlan as any).assign_unit(msg.layer, msg.geoId, msg.district);
+      log('[Worker] assign-unit done, sending geometries');
       sendGeometries();
       sendStats();
     }

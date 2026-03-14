@@ -7,6 +7,13 @@ export function useMapMetrics() {
   const scalarDataRef = useRef<Partial<Record<ScalarMetric, Record<string, number>>>>({});
   const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
 
+  const clearMetrics = useCallback(() => {
+    partisanLeanRef.current = {};
+    geoIdByIndexRef.current = {};
+    scalarDataRef.current = {};
+    ethnicityDataRef.current = {};
+  }, []);
+
   const applyMetrics = useCallback((
     partisanLean: Record<string, number>,
     geoIdByIndex: Record<string, Record<number, string>>,
@@ -19,5 +26,5 @@ export function useMapMetrics() {
     ethnicityDataRef.current = ethnicityData;
   }, []);
 
-  return { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, applyMetrics };
+  return { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, clearMetrics, applyMetrics };
 }
