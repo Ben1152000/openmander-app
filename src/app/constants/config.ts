@@ -21,19 +21,19 @@ export function getLayerForZoom(zoom: number): string {
 
 export const STATE_CONFIGS: Record<string, StateConfig> = {
   illinois: {
-    packDir: 'IL_2020_webpack',
+    packDir: 'IL/IL_2020_webpack',
     pmtilesBounds: [-91.5, 36.9, -87.0, 42.5],
     center: [-89.2, 40.0],
     zoom: 6,
   },
   iowa: {
-    packDir: 'IA_2020_webpack',
+    packDir: 'IA/IA_2020_webpack',
     pmtilesBounds: [-96.7, 40.3, -90.1, 43.6],
     center: [-93.5, 42.0],
     zoom: 6.5,
   },
   indiana: {
-    packDir: 'IN_2020_webpack',
+    packDir: 'IN/IN_2020_webpack',
     pmtilesBounds: [-88.1, 37.7, -84.7, 41.8],
     center: [-86.3, 39.8],
     zoom: 6.5,

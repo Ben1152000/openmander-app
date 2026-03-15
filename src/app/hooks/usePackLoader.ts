@@ -34,7 +34,8 @@ export function usePackLoader(
       setLoadingStatus('Loading pack files...');
 
       try {
-        const packPath = `/packs/${config.packDir}`;
+        const packsBase = import.meta.env.VITE_PACK_SERVER_URL ?? '/packs';
+        const packPath = `${packsBase}/${config.packDir}`;
         const { packFiles, pmtilesBuffer } = await loadPackFromDirectory(packPath, (cur, total, file) => {
           setLoadingStatus(`Loading pack files... (${cur}/${total})${file ? ` - ${file}` : ''}`);
         }, signal);
@@ -42,15 +43,19 @@ export function usePackLoader(
 
         setLoadingStatus('Downloading geometry tiles...');
 
+        // Build an absolute URL for the PMTiles file (used as the cache key).
+        const pmtilesUrl = `${packPath}/geom/geometries.pmtiles`;
+        const pmtilesAbsUrl = pmtilesUrl.startsWith('http')
+          ? pmtilesUrl
+          : `${window.location.origin}${pmtilesUrl}`;
+
         if (pmtilesBuffer !== null) {
           // PMTiles was pre-assembled from chunks — cache it and set the buffer directly.
-          const baseUrl = window.location.origin;
-          const fullUrl = `${baseUrl}${packPath}/geom/geometries.pmtiles`;
-          await cacheAndSetPMTiles(fullUrl, pmtilesBuffer);
+          await cacheAndSetPMTiles(pmtilesAbsUrl, pmtilesBuffer);
         } else {
           // PMTiles exists as a single file — use the normal download + cache path.
           const pmtilesDownloaded = await loadAndCachePMTiles(
-            `${packPath}/geom/geometries.pmtiles`,
+            pmtilesUrl,
             (loaded, total) => {
               const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
               setLoadingStatus(`Downloading geometry tiles... ${pct}%`);
