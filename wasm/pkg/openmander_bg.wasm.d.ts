@@ -1,0 +1,37 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_wasmplan_free: (a: number, b: number) => void;
+export const wasmplan_all_part_totals: (a: number, b: number, c: number) => [number, number, number];
+export const wasmplan_anneal_balance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const wasmplan_assign_unit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const wasmplan_assignments_dict: (a: number) => [number, number, number];
+export const wasmplan_assignments_u32: (a: number) => [number, number, number];
+export const wasmplan_district_geometries_wkb: (a: number) => [number, number, number];
+export const wasmplan_district_totals: (a: number, b: number, c: number) => [number, number, number];
+export const wasmplan_equalize: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+export const wasmplan_equalize_step: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const wasmplan_load_csv_text: (a: number, b: number, c: number) => [number, number];
+export const wasmplan_new: (a: number, b: number) => [number, number, number];
+export const wasmplan_num_districts: (a: number) => number;
+export const wasmplan_randomize: (a: number) => [number, number];
+export const wasmplan_recombine: (a: number, b: number, c: number) => [number, number];
+export const wasmplan_series: (a: number) => [number, number, number];
+export const wasmplan_set_assignments_u32: (a: number, b: any) => [number, number];
+export const wasmplan_tabu_balance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const wasmplan_to_csv_text: (a: number) => [number, number, number, number];
+export const wasmplan_to_geojson: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const init: () => void;
+export const __wbg_wasmmap_free: (a: number, b: number) => void;
+export const wasmmap_layers_present: (a: number) => [number, number, number];
+export const wasmmap_new: (a: any) => [number, number, number];
+export const wasmmap_to_geojson: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const wasmmap_to_svg: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_start: () => void;

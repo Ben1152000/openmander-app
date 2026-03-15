@@ -1,0 +1,15 @@
+{
+  "name": "openmander-wasm",
+  "type": "module",
+  "version": "0.1.3",
+  "files": [
+    "openmander_bg.wasm",
+    "openmander.js",
+    "openmander.d.ts"
+  ],
+  "main": "openmander.js",
+  "types": "openmander.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
