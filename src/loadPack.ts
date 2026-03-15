@@ -78,7 +78,7 @@ export async function loadPackFromDirectory(
     const isChunked = parts.length > 1 || parts[0] !== logicalName;
     if (isChunked) {
       const data = await fetchAndConcat(parts.map(p => `${packPath}/${p}`), signal);
-      pmtilesBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      pmtilesBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
     }
     loaded++;
     onProgress?.(loaded, total, logicalName);

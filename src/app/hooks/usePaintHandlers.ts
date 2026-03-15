@@ -37,7 +37,7 @@ export function usePaintHandlers(params: {
       }
     };
 
-    const applyPaint = (featureId: string | number, geoId: string) => {
+    const applyPaint = (_featureId: string | number, geoId: string) => {
       if (drawingTool === 'erase') {
         const prev = assignmentsRef.current[geoId];
         if (prev != null) {
