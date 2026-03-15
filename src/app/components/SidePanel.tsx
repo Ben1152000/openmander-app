@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload, Download } from 'lucide-react';
+import openmanderIcon from '/openmander-icon.svg';
 
 import { Label } from './ui/label';
 import { Button } from './ui/button';
@@ -161,7 +162,7 @@ export function SidePanel(props: SidePanelProps) {
     <div className="h-full bg-background border-r flex flex-col">
       <div className="p-6 border-b">
         <div className="flex items-center gap-3">
-          <img src="/openmander-icon.svg" alt="OpenMander logo" className="w-14 h-14 flex-shrink-0 mr-1" />
+          <img src={openmanderIcon} alt="OpenMander logo" className="w-14 h-14 flex-shrink-0 mr-1" />
           <div>
             <h1 className="text-2xl">OpenMander</h1>
             <p className="text-sm text-muted-foreground">
