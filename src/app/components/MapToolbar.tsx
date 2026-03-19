@@ -53,7 +53,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
       <div className="flex items-center gap-3 pointer-events-auto">
         {/* Visualization Mode Button */}
         <button
-          className="flex items-center gap-2 bg-white rounded-lg shadow-lg px-3 h-9 cursor-pointer select-none text-gray-700 hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-2 bg-white rounded-lg shadow-lg px-3 py-2 cursor-pointer select-none text-gray-700 hover:bg-gray-50 transition-colors"
           onClick={() => onVisualizationModeChange(visualizationMode === 'districts' ? 'map' : 'districts')}
           title={visualizationMode === 'districts' ? 'Switch to map view' : 'Switch to district view'}
         >
@@ -64,11 +64,11 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
         </button>
 
         {/* Metric dropdown */}
-        <div className="flex items-center bg-white rounded-lg shadow-lg px-3 h-9">
+        <div className="flex items-center bg-white rounded-lg shadow-lg px-3">
           <select
             value={districtColorMetric}
             onChange={e => onDistrictColorMetricChange(e.target.value)}
-            className="text-sm font-medium text-gray-700 bg-transparent cursor-pointer outline-none"
+            className="text-sm font-medium text-gray-700 bg-transparent cursor-pointer outline-none py-[9.5px]"
           >
             <option value="default">Color</option>
             <option value="partisan">Partisan</option>

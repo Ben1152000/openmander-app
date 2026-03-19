@@ -77,6 +77,7 @@ export function usePaintHandlers(params: {
       if (drawingTool === 'pan' || automationRunning) return;
       // Prevent map drag when painting
       e.preventDefault();
+
       isPaintingRef.current = true;
       lastPaintedGeoIdRef.current = null;
       const info = getFeatureInfo(e);
@@ -115,21 +116,27 @@ export function usePaintHandlers(params: {
       lastPaintedGeoIdRef.current = null;
     };
 
-    const handleMouseLeave = () => {
+    const handleMapMouseLeave = () => {
       map.getCanvas().style.cursor = '';
       clearHover();
       isPaintingRef.current = false;
     };
 
+    const handleLayerMouseLeave = () => {
+      clearHover();
+    };
+
     map.on('mousedown', fillLayerId, handleMouseDown);
     map.on('mousemove', fillLayerId, handleMouseMove);
-    map.on('mouseup', fillLayerId, handleMouseUp);
-    map.on('mouseleave', fillLayerId, handleMouseLeave);
+    map.on('mouseup', handleMouseUp);
+    map.on('mouseleave', handleMapMouseLeave);
+    map.on('mouseleave', fillLayerId, handleLayerMouseLeave);
     return () => {
       map.off('mousedown', fillLayerId, handleMouseDown);
       map.off('mousemove', fillLayerId, handleMouseMove);
-      map.off('mouseup', fillLayerId, handleMouseUp);
-      map.off('mouseleave', fillLayerId, handleMouseLeave);
+      map.off('mouseup', handleMouseUp);
+      map.off('mouseleave', handleMapMouseLeave);
+      map.off('mouseleave', fillLayerId, handleLayerMouseLeave);
       clearHover();
       isPaintingRef.current = false;
     };

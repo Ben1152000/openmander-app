@@ -32,7 +32,7 @@ jobs:
         run: npm run build
         env:
           VITE_BASE_PATH: /openmander-app/
-          VITE_PACK_SERVER_URL: https://bdarnell.com/openmander-data/packs
+          VITE_PACK_SERVER_URL: https://pub-9e91ad17dac84ad0a7cdcf4e53c2145f.r2.dev/packs
 
       - uses: actions/upload-pages-artifact@v3
         with:

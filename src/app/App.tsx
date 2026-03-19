@@ -38,7 +38,7 @@ export default function App() {
   const mapDivRef = useRef<HTMLDivElement | null>(null);
 
   const [numDistricts, setNumDistricts] = useState(DEFAULT_NUM_DISTRICTS);
-  const [loadedState, setLoadedState] = useState('illinois');
+  const [loadedState, setLoadedState] = useState('');
   const [mapInitialized, setMapInitialized] = useState(false);
 
   // Loading state (shared across hooks via setLoadingStatus)
@@ -175,7 +175,7 @@ export default function App() {
     mw.onerror = (e) => console.error('[MetricsWorker] Error:', e.message, e);
     metricsWorkerRef.current = mw;
     mw.postMessage({ packFiles: mapData.packFiles });
-  }, [mapData, numDistricts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mapData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize map only once
   useEffect(() => {
@@ -193,8 +193,8 @@ export default function App() {
     const map = new maplibregl.Map({
       container: mapDivRef.current,
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-      center: STATE_CONFIGS['illinois'].center,
-      zoom: STATE_CONFIGS['illinois'].zoom,
+      bounds: STATE_CONFIGS['illinois'].bounds,
+      fitBoundsOptions: { padding: 40 },
       minZoom: 4.0,
       antialias: true,
       fadeDuration: 0,
@@ -376,6 +376,11 @@ export default function App() {
           onNumDistrictsChange={setNumDistricts}
           loadedState={loadedState}
           onLoadMap={handleLoadMap}
+          onPendingStateChange={(state) => {
+            if (loadedState) return;
+            const config = STATE_CONFIGS[state];
+            if (config && mapRef.current) mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40 });
+          }}
           activeDistrict={activeDistrict}
           onActiveDistrictChange={setActiveDistrict}
           paintMode={drawingTool === 'paint'}

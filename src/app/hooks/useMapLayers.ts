@@ -18,15 +18,15 @@ export function useMapLayers(params: {
 }) {
   const { mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef } = params;
 
+  // Immediately clear layers and pan to the new state when loadedState changes.
   useEffect(() => {
-    if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
+    if (!mapRef.current || !mapInitialized) return;
     const config = STATE_CONFIGS[loadedState];
     if (!config) return;
 
     const map = mapRef.current;
     const sourceId = 'units-all';
 
-    // Remove existing layers/source before re-adding for new state
     if (map.getLayer('state-outline')) map.removeLayer('state-outline');
     for (const name of ALL_LAYERS) {
       if (map.getLayer(`units-${name}-hover`)) map.removeLayer(`units-${name}-hover`);
@@ -36,6 +36,17 @@ export function useMapLayers(params: {
     if (map.getSource(sourceId)) map.removeSource(sourceId);
     loadedSourcesRef.current.delete('all');
 
+    map.fitBounds(config.bounds, { animate: false, padding: 40 });
+  }, [mapInitialized, loadedState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
+    const config = STATE_CONFIGS[loadedState];
+    if (!config) return;
+
+    const map = mapRef.current;
+    const sourceId = 'units-all';
+
     const pmtilesUrl = `pmtiles:///packs/${config.packDir}/geom/geometries.pmtiles`;
     setLoadingStatus('Loading geometry layers...');
 
@@ -44,7 +55,6 @@ export function useMapLayers(params: {
         type: 'vector',
         url: pmtilesUrl,
         scheme: 'xyz',
-        bounds: config.pmtilesBounds,
       } as any);
 
       const fillPaint: any = {
@@ -99,7 +109,6 @@ export function useMapLayers(params: {
       setSourcesVersion(v => v + 1);
 
       (map.getSource(sourceId) as any).on('error', () => setLoadingStatus('Error loading geometry layers'));
-      map.jumpTo({ center: config.center, zoom: config.zoom });
       map.once('idle', () => { if (workerReadyRef.current) setLoadingStatus(''); });
     } catch (err) {
       console.error('Failed to add PMTiles source:', err);

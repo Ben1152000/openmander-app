@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Upload, Download } from 'lucide-react';
 import openmanderIcon from '/openmander-icon.svg';
 
+import { STATE_CONFIGS } from '@/app/constants/config';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -10,18 +11,6 @@ import type { RegionStats } from '@/app/hooks/useDistrictData';
 import { partisanLeanClass, partisanLeanLabel, deviationClass } from '@/app/constants/colors';
 import { RankVotesChart } from './RankVotesChart';
 
-const STATE_DISTRICTS: Record<string, number> = {
-  alabama: 7, alaska: 1, arizona: 9, arkansas: 4, california: 52, colorado: 8,
-  connecticut: 5, delaware: 1, florida: 28, georgia: 14, hawaii: 2, idaho: 2,
-  illinois: 17, indiana: 9, iowa: 4, kansas: 4, kentucky: 6, louisiana: 6,
-  maine: 2, maryland: 8, massachusetts: 9, michigan: 13, minnesota: 8,
-  mississippi: 4, missouri: 8, montana: 2, nebraska: 3, nevada: 4,
-  'new-hampshire': 2, 'new-jersey': 12, 'new-mexico': 3, 'new-york': 26,
-  'north-carolina': 14, 'north-dakota': 1, ohio: 15, oklahoma: 5, oregon: 6,
-  pennsylvania: 17, 'rhode-island': 2, 'south-carolina': 7, 'south-dakota': 1,
-  tennessee: 9, texas: 38, utah: 4, vermont: 1, virginia: 11, washington: 10,
-  'west-virginia': 2, wisconsin: 8, wyoming: 1,
-};
 
 // Log-scale slider helpers for parameters in the automation tab.
 function logSliderToValue(t: number, min: number, max: number): number {
@@ -43,6 +32,7 @@ interface SidePanelProps {
   onNumDistrictsChange: (n: number) => void;
   loadedState: string;
   onLoadMap?: (state: string, districts: number) => void;
+  onPendingStateChange?: (state: string) => void;
   activeDistrict: number;
   onActiveDistrictChange: (n: number) => void;
   paintMode: boolean;
@@ -81,6 +71,7 @@ export function SidePanel(props: SidePanelProps) {
     numDistricts,
     loadedState,
     onLoadMap,
+    onPendingStateChange,
     activeDistrict,
     onActiveDistrictChange,
     onRefreshDistricts,
@@ -106,7 +97,7 @@ export function SidePanel(props: SidePanelProps) {
   } = props;
 
   const [pendingState, setPendingState] = useState('illinois');
-  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_DISTRICTS['illinois'] ?? numDistricts));
+  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_CONFIGS['illinois']?.districts ?? numDistricts));
   const shiftHeldOnSpinner = useRef(false);
 
   type LogEntry = { level: 'log' | 'warn' | 'error'; message: string; time: string };
@@ -286,59 +277,27 @@ export function SidePanel(props: SidePanelProps) {
                     onChange={(e) => {
                       const s = e.target.value;
                       setPendingState(s);
-                      const d = STATE_DISTRICTS[s];
+                      const d = STATE_CONFIGS[s]?.districts;
                       if (d) setPendingDistrictsRaw(String(d));
+                      onPendingStateChange?.(s);
                     }}
                     className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
                   >
-                    <option value="alabama" disabled>Alabama</option>
-                    <option value="arizona" disabled>Arizona</option>
-                    <option value="arkansas" disabled>Arkansas</option>
-                    <option value="california" disabled>California</option>
-                    <option value="colorado" disabled>Colorado</option>
-                    <option value="connecticut" disabled>Connecticut</option>
-                    <option value="delaware" disabled>Delaware</option>
-                    <option value="florida" disabled>Florida</option>
-                    <option value="georgia" disabled>Georgia</option>
-                    <option value="idaho" disabled>Idaho</option>
-                    <option value="illinois">Illinois</option>
-                    <option value="indiana">Indiana</option>
-                    <option value="iowa">Iowa</option>
-                    <option value="kansas" disabled>Kansas</option>
-                    <option value="kentucky" disabled>Kentucky</option>
-                    <option value="louisiana" disabled>Louisiana</option>
-                    <option value="maine" disabled>Maine</option>
-                    <option value="maryland" disabled>Maryland</option>
-                    <option value="massachusetts" disabled>Massachusetts</option>
-                    <option value="michigan" disabled>Michigan</option>
-                    <option value="minnesota" disabled>Minnesota</option>
-                    <option value="mississippi" disabled>Mississippi</option>
-                    <option value="missouri" disabled>Missouri</option>
-                    <option value="montana" disabled>Montana</option>
-                    <option value="nebraska" disabled>Nebraska</option>
-                    <option value="nevada" disabled>Nevada</option>
-                    <option value="new-hampshire" disabled>New Hampshire</option>
-                    <option value="new-jersey" disabled>New Jersey</option>
-                    <option value="new-mexico" disabled>New Mexico</option>
-                    <option value="new-york" disabled>New York</option>
-                    <option value="north-carolina" disabled>North Carolina</option>
-                    <option value="north-dakota" disabled>North Dakota</option>
-                    <option value="ohio" disabled>Ohio</option>
-                    <option value="oklahoma" disabled>Oklahoma</option>
-                    <option value="oregon" disabled>Oregon</option>
-                    <option value="pennsylvania" disabled>Pennsylvania</option>
-                    <option value="rhode-island" disabled>Rhode Island</option>
-                    <option value="south-carolina" disabled>South Carolina</option>
-                    <option value="south-dakota" disabled>South Dakota</option>
-                    <option value="tennessee" disabled>Tennessee</option>
-                    <option value="texas" disabled>Texas</option>
-                    <option value="utah" disabled>Utah</option>
-                    <option value="vermont" disabled>Vermont</option>
-                    <option value="virginia" disabled>Virginia</option>
-                    <option value="washington" disabled>Washington</option>
-                    <option value="west-virginia" disabled>West Virginia</option>
-                    <option value="wisconsin" disabled>Wisconsin</option>
-                    <option value="wyoming" disabled>Wyoming</option>
+                    {[
+                      'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+                      'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+                      'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+                      'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi',
+                      'missouri', 'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey',
+                      'new mexico', 'new york', 'north carolina', 'north dakota', 'ohio', 'oklahoma',
+                      'oregon', 'pennsylvania', 'rhode island', 'south carolina', 'south dakota',
+                      'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
+                      'west virginia', 'wisconsin', 'wyoming',
+                    ].map((value) => (
+                      <option key={value} value={value} disabled={!(value in STATE_CONFIGS)}>
+                        {value.replace(/\b\w/g, c => c.toUpperCase())}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="w-32">
