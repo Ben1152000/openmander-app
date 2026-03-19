@@ -1,8 +1,8 @@
-# Openmander
+# OpenMander – Automated Congressional Redistricting
 
-Openmander is an interactive redistricting app that lets you draw congressional district maps for ~~all~~ most US states. Select a state, paint districts onto the map at the census block level, and see live demographic and partisan statistics update as you draw.
+Openmander is an interactive automated redistricting app that lets you draw congressional district maps for ~~all~~ most US states. Select a state, paint districts onto the map at the census block level, and see live demographic and partisan statistics update as you draw.
 
-**[Try it at openmander.org](https://openmander.org)**
+**Try it out at [openmander.org](https://openmander.org)!**
 
 ![Openmander screenshot](public/images/screenshot.png)
 
@@ -17,4 +17,4 @@ npm install
 npm run dev   # Vite dev server at http://localhost:10001
 ```
 
-WASM bindings must be built first — see [`openmander-core`](https://github.com/Ben1152000/openmander-core).
+WASM bindings must be built first (see [`openmander-core`](https://github.com/Ben1152000/openmander-core) for details).
