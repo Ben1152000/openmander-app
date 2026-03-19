@@ -172,8 +172,9 @@ export async function loadAndCachePMTiles(
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
   // Construct full URL
-  const baseUrl = window.location.origin;
-  const fullUrl = `${baseUrl}${pmtilesPath}`;
+  const fullUrl = pmtilesPath.startsWith('http')
+    ? pmtilesPath
+    : `${window.location.origin}${pmtilesPath}`;
 
   return downloadPMTilesFile(fullUrl, onProgress, signal);
 }
