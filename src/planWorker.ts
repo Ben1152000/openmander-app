@@ -52,7 +52,7 @@ let lastGeometryMs = 0;
 const GOLDEN_ANGLE = 137.50776405;
 
 function districtColorWorker(index: number): string {
-  const hue = (index * GOLDEN_ANGLE) % 360;
+  const hue = (index * GOLDEN_ANGLE + 10) % 360;
   return `hsl(${hue.toFixed(1)} 65% 52%)`;
 }
 

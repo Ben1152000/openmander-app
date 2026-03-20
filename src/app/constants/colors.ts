@@ -6,7 +6,8 @@ export const PARTISAN_DEM_CLASS = 'text-blue-600';
 export const PARTISAN_REP_CLASS = 'text-red-600';
 
 export function deviationClass(deviation: number): string {
-  return deviation >= 0 ? 'text-green-600' : 'text-red-600';
+  if (Math.abs(deviation) < 0.005) return 'text-muted-foreground';
+  return deviation > 0 ? 'text-green-600' : 'text-red-600';
 }
 
 export function partisanLeanClass(lean: number | null): string {
@@ -26,7 +27,7 @@ export function partisanLeanLabel(lean: number | null): string {
 const GOLDEN_ANGLE = 137.50776405;
 
 export function districtColor(index: number): string {
-  const hue = (index * GOLDEN_ANGLE) % 360;
+  const hue = (index * GOLDEN_ANGLE + 10) % 360;
   return `hsl(${hue.toFixed(1)} 65% 52%)`;
 }
 

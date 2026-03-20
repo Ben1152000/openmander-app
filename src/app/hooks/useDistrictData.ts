@@ -100,6 +100,7 @@ export function useDistrictData(
   const resetDistrictData = useCallback(() => {
     setDistrictGeoJson(null);
     setDistrictStats(null);
+    setRegionStats(null);
   }, []);
 
   return { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData };

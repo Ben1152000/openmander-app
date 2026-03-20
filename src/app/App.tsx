@@ -387,7 +387,6 @@ export default function App() {
           onPaintModeChange={(enabled) => setDrawingTool(enabled ? 'paint' : 'pan')}
           visualizationMode={visualizationMode}
           onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
-          districtCounts={districtCounts}
           onRefreshDistricts={handleRefreshDistricts}
           onClearAssignments={handleClearAssignments}
           districtColorMetric={districtColorMetric}

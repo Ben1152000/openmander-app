@@ -39,7 +39,6 @@ interface SidePanelProps {
   onPaintModeChange: (enabled: boolean) => void;
   visualizationMode: string;
   onVisualizationModeChange: (mode: string) => void;
-  districtCounts: Record<number, number>;
   onRefreshDistricts: () => void;
   onClearAssignments: () => void;
   districtColorMetric: string;
@@ -98,6 +97,7 @@ export function SidePanel(props: SidePanelProps) {
 
   const [pendingState, setPendingState] = useState('illinois');
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_CONFIGS['illinois']?.districts ?? numDistricts));
+  const [deviationMode, setDeviationMode] = useState<'percent' | 'absolute'>('percent');
   const shiftHeldOnSpinner = useRef(false);
 
   type LogEntry = { level: 'log' | 'warn' | 'error'; message: string; time: string };
@@ -189,29 +189,53 @@ export function SidePanel(props: SidePanelProps) {
               <table className="w-full text-sm">
                 <thead className="bg-muted border-b sticky top-0">
                   <tr>
-                    <th className="text-left py-2 pl-6 pr-3 font-medium">District</th>
-                    <th className="text-right py-2 px-3 font-medium">Population</th>
-                    <th className="text-right py-2 px-3 font-medium">Deviation</th>
-                    <th className="text-right py-1 pl-3 pr-6 font-medium w-1/3">
+                    <th className="text-left py-2 pl-6 pr-3 font-medium w-1/5">District</th>
+                    <th className="text-right py-2 px-3 font-medium w-1/4">Population</th>
+                    <th className="text-right py-1 px-3 font-medium w-1/4">
                       <select
-                        value={districtColorMetric}
-                        onChange={e => onDistrictColorMetricChange(e.target.value as typeof districtColorMetric)}
-                        className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
-                      >
-                        <option value="default">Color</option>
-                        <option value="partisan">Partisan</option>
-                        <option value="population_density">Density</option>
-                        <option value="white_pct">White %</option>
-                        <option value="black_pct">Black %</option>
-                        <option value="hispanic_pct">Hispanic %</option>
-                        <option value="asian_pct">Asian %</option>
-                        <option value="native_pct">Native %</option>
-                        <option value="pacific_pct">Pacific %</option>
-                      </select>
+                          value={deviationMode}
+                          onChange={e => setDeviationMode(e.target.value as 'percent' | 'absolute')}
+                          className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
+                        >
+                          <option value="percent">Deviation %</option>
+                          <option value="absolute">Deviation #</option>
+                        </select>
+                    </th>
+                    <th className="text-right py-1 pl-3 pr-6 font-medium w-1/4">
+                      <select
+                          value={districtColorMetric}
+                          onChange={e => onDistrictColorMetricChange(e.target.value as typeof districtColorMetric)}
+                          className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
+                        >
+                          <option value="default">Color</option>
+                          <option value="partisan">Partisan</option>
+                          <option value="population_density">Density</option>
+                          <option value="white_pct">White %</option>
+                          <option value="black_pct">Black %</option>
+                          <option value="hispanic_pct">Hispanic %</option>
+                          <option value="asian_pct">Asian %</option>
+                          <option value="native_pct">Native %</option>
+                          <option value="pacific_pct">Pacific %</option>
+                        </select>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
+                  {regionStats && (() => {
+                    const assignedPop = districtStats.reduce((sum, d) => sum + d.population, 0);
+                    const unassignedPop = Math.round(regionStats.totalPop - assignedPop);
+                    if (unassignedPop <= 0) return null;
+                    return (
+                      <tr className="border-b text-muted-foreground">
+                        <td className="py-3 pl-6 pr-3">
+                          <span>None</span>
+                        </td>
+                        <td className="py-3 px-3 text-right">{unassignedPop.toLocaleString()}</td>
+                        <td className="py-3 px-3 text-right">—</td>
+                        <td className="py-3 pl-3 pr-6 text-right">—</td>
+                      </tr>
+                    );
+                  })()}
                   {districtStats.map((d) => {
                     const twoParty = d.demVotes + d.repVotes;
                     const lean = twoParty > 0 ? (d.demVotes - d.repVotes) / twoParty : null;
@@ -250,9 +274,26 @@ export function SidePanel(props: SidePanelProps) {
                           {Math.round(d.population).toLocaleString()}
                         </td>
                         <td className="py-3 px-3 text-right">
-                          <span className={deviationClass(d.deviation)}>
-                            {d.deviation >= 0 ? '+' : ''}{d.deviation.toFixed(2)}%
-                          </span>
+                          {deviationMode === 'percent' ? (
+                            d.population === 0 ? (
+                              <span className={deviationClass(-100)}>-100.00%</span>
+                            ) : (
+                              <span className={deviationClass(d.deviation)}>
+                                {d.deviation > 0 ? '+' : ''}{d.deviation.toFixed(2)}%
+                              </span>
+                            )
+                          ) : (() => {
+                            const target = regionStats ? regionStats.totalPop / numDistricts : 0;
+                            const abs = Math.round(d.population - target) || 0;
+                            const absClass = d.population === 0
+                              ? deviationClass(-100)
+                              : abs === 0 ? 'text-muted-foreground' : abs > 0 ? 'text-green-600' : 'text-red-600';
+                            return (
+                              <span className={absClass}>
+                                {abs > 0 ? '+' : ''}{abs.toLocaleString()}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className={`py-3 pl-3 pr-6 text-right ${lastColValue.className}`}>
                           {lastColValue.label}
@@ -510,7 +551,7 @@ export function SidePanel(props: SidePanelProps) {
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1"
-                  disabled={automationRunning}
+                  disabled={automationRunning || !workerReady}
                   onClick={onRunAutomation}
                 >
                   {automationRunning ? 'Running...' : 'Generate'}
