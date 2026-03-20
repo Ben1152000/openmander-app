@@ -58,7 +58,7 @@ export default function App() {
   const featureHashesRef = useRef<Record<string, string>>({});
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
-  const [districtCounts, setDistrictCounts] = useState<Record<number, number>>({});
+  const [, setDistrictCounts] = useState<Record<number, number>>({});
 
   // Visualization mode
   const [visualizationMode, setVisualizationMode] = useState<'districts' | 'map'>('districts');
