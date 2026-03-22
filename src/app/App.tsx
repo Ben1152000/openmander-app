@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl, { Map } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
+import { Map as MapIcon, LayoutList } from 'lucide-react';
 import { SidePanel } from '@/app/components/SidePanel';
 import { MapViewer } from '@/app/components/MapViewer';
 import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
@@ -30,6 +31,27 @@ function setupPmtilesProtocol() {
 
 export default function App() {
   const { sidebarWidth, handleMouseDown } = useSidebarResize(400);
+
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [mobileTab, setMobileTab] = useState<'map' | 'panel'>('map');
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
+
+  useEffect(() => {
+    setTimeout(() => mapRef.current?.resize(), 0);
+  }, [isMobile]);
+
+  const handleMobileTabChange = (tab: 'map' | 'panel') => {
+    setMobileTab(tab);
+    if (tab === 'map') {
+      // setTimeout ensures the div is visible and has real dimensions before resize()
+      setTimeout(() => mapRef.current?.resize(), 0);
+    }
+  };
 
   // Worker ready state (replaces wasmLoading/wasmError)
   const [workerReady, setWorkerReady] = useState(false);
@@ -370,77 +392,113 @@ export default function App() {
     }
   };
 
+  const sidePanelProps = {
+    activeTab,
+    onTabChange: setActiveTab,
+    numDistricts,
+    onNumDistrictsChange: setNumDistricts,
+    loadedState,
+    onLoadMap: handleLoadMap,
+    onPendingStateChange: (state: string) => {
+      if (loadedState) return;
+      const config = STATE_CONFIGS[state];
+      if (config && mapRef.current) mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40 });
+    },
+    activeDistrict,
+    onActiveDistrictChange: setActiveDistrict,
+    paintMode: drawingTool === 'paint',
+    onPaintModeChange: (enabled: boolean) => setDrawingTool(enabled ? 'paint' : 'pan'),
+    visualizationMode,
+    onVisualizationModeChange: (mode: string) => setVisualizationMode(mode as 'districts' | 'map'),
+    onRefreshDistricts: handleRefreshDistricts,
+    onClearAssignments: handleClearAssignments,
+    districtColorMetric,
+    onDistrictColorMetricChange: (m: string) => setDistrictColorMetric(m as any),
+    districtStats,
+    regionStats,
+    districtSwatchColors,
+    workerReady,
+    currentZoom,
+    currentLayer,
+    loadingStatus,
+    algorithm,
+    onAlgorithmChange: setAlgorithm,
+    popTolerance,
+    onPopToleranceChange: setPopTolerance,
+    popIterations,
+    onPopIterationsChange: setPopIterations,
+    automationRunning,
+    onRunAutomation: handleRunAutomation,
+    onExportPlan: handleExportPlan,
+    onImportPlan: handleImportPlan,
+  };
+
+  const mapViewer = (
+    <MapViewer
+      mapRef={mapRef}
+      mapDivRef={mapDivRef}
+      onMapInitialized={() => setMapInitialized(true)}
+      loadingPack={loadingPack}
+      loadingStatus={loadingStatus}
+      activeLayer={activeLayer}
+    >
+      <MapToolbar
+        drawingTool={drawingTool}
+        onDrawingToolChange={setDrawingTool}
+        visualizationMode={visualizationMode}
+        onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
+        districtColorMetric={districtColorMetric}
+        onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
+        visible={mapInitialized && !loadingPack && pmtilesBufferReady}
+        workerReady={workerReady}
+        activeDistrict={activeDistrict}
+      />
+    </MapViewer>
+  );
+
   return (
-    <div className="h-screen w-screen flex overflow-hidden">
-      <div className="flex-shrink-0" style={{ width: `${sidebarWidth}px` }}>
-        <SidePanel
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          numDistricts={numDistricts}
-          onNumDistrictsChange={setNumDistricts}
-          loadedState={loadedState}
-          onLoadMap={handleLoadMap}
-          onPendingStateChange={(state) => {
-            if (loadedState) return;
-            const config = STATE_CONFIGS[state];
-            if (config && mapRef.current) mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40 });
-          }}
-          activeDistrict={activeDistrict}
-          onActiveDistrictChange={setActiveDistrict}
-          paintMode={drawingTool === 'paint'}
-          onPaintModeChange={(enabled) => setDrawingTool(enabled ? 'paint' : 'pan')}
-          visualizationMode={visualizationMode}
-          onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
-          onRefreshDistricts={handleRefreshDistricts}
-          onClearAssignments={handleClearAssignments}
-          districtColorMetric={districtColorMetric}
-          onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
-          districtStats={districtStats}
-          regionStats={regionStats}
-          districtSwatchColors={districtSwatchColors}
-          workerReady={workerReady}
-          currentZoom={currentZoom}
-          currentLayer={currentLayer}
-          loadingStatus={loadingStatus}
-          algorithm={algorithm}
-          onAlgorithmChange={setAlgorithm}
-          popTolerance={popTolerance}
-          onPopToleranceChange={setPopTolerance}
-          popIterations={popIterations}
-          onPopIterationsChange={setPopIterations}
-          automationRunning={automationRunning}
-          onRunAutomation={handleRunAutomation}
-          onExportPlan={handleExportPlan}
-          onImportPlan={handleImportPlan}
+    <div className="h-screen w-screen overflow-hidden flex flex-col">
+      {/* Main content row (desktop) / stack (mobile) */}
+      <div className="flex-1 flex overflow-hidden" style={{ flexDirection: isMobile ? 'column' : 'row' }}>
+        {/* Sidebar */}
+        <div
+          className={isMobile && mobileTab !== 'panel' ? 'hidden' : 'overflow-hidden'}
+          style={isMobile ? { flex: 1 } : { width: `${sidebarWidth}px`, flexShrink: 0 }}
+        >
+          <SidePanel {...sidePanelProps} />
+        </div>
+
+        {/* Resize handle — always rendered so sibling order stays constant */}
+        <div
+          onMouseDown={!isMobile ? handleMouseDown : undefined}
+          className={isMobile ? 'hidden' : 'w-1 bg-border hover:bg-primary cursor-col-resize flex-shrink-0 transition-colors'}
         />
+
+        {/* Map — always rendered, hidden on mobile when panel tab is active */}
+        <div
+          className={isMobile && mobileTab !== 'map' ? 'hidden' : 'overflow-hidden'}
+          style={{ flex: 1 }}
+        >
+          {mapViewer}
+        </div>
       </div>
 
-      <div
-        onMouseDown={handleMouseDown}
-        className="w-1 bg-border hover:bg-primary cursor-col-resize flex-shrink-0 transition-colors"
-      />
-
-      <div className="flex-1">
-        <MapViewer
-          mapRef={mapRef}
-          mapDivRef={mapDivRef}
-          onMapInitialized={() => setMapInitialized(true)}
-          loadingPack={loadingPack}
-          loadingStatus={loadingStatus}
-          activeLayer={activeLayer}
+      {/* Mobile tab bar — always rendered so sibling order stays constant */}
+      <div className={`border-t bg-background shrink-0 ${isMobile ? 'flex' : 'hidden'}`}>
+        <button
+          onClick={() => handleMobileTabChange('panel')}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-xs font-medium transition-colors ${mobileTab === 'panel' ? 'text-primary' : 'text-muted-foreground'}`}
         >
-          <MapToolbar
-            drawingTool={drawingTool}
-            onDrawingToolChange={setDrawingTool}
-            visualizationMode={visualizationMode}
-            onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
-            districtColorMetric={districtColorMetric}
-            onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
-            visible={mapInitialized && !loadingPack && pmtilesBufferReady}
-            workerReady={workerReady}
-            activeDistrict={activeDistrict}
-          />
-        </MapViewer>
+          <LayoutList className="w-5 h-5" />
+          Menu
+        </button>
+        <button
+          onClick={() => handleMobileTabChange('map')}
+          className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 text-xs font-medium transition-colors ${mobileTab === 'map' ? 'text-primary' : 'text-muted-foreground'}`}
+        >
+          <MapIcon className="w-5 h-5" />
+          Map
+        </button>
       </div>
     </div>
   );

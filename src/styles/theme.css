@@ -1,7 +1,10 @@
 @custom-variant dark (&:is(.dark *));
 
-select {
-  -webkit-appearance: none;
+/* Apply only on WebKit/Safari — Firefox supports -moz-appearance so this excludes it */
+@supports (not (-moz-appearance: none)) {
+  select {
+    -webkit-appearance: none;
+  }
 }
 
 .scrollbar-none {
