@@ -262,7 +262,7 @@ export function SidePanel(props: SidePanelProps) {
                       <tr
                         key={d.district}
                         className={`border-b last:border-b-0 hover:bg-accent transition-colors cursor-pointer ${isSelected ? 'bg-accent' : ''}`}
-                        onClick={() => onActiveDistrictChange(d.district)}
+                        onClick={() => onActiveDistrictChange(d.district === activeDistrict ? 0 : d.district)}
                       >
                         <td className="py-3 pl-6 pr-3">
                           <div className="flex items-center gap-2">
@@ -519,7 +519,7 @@ export function SidePanel(props: SidePanelProps) {
                         const t = Number(e.target.value);
                         onPopToleranceChange(logSliderToValue(t, 1e-6, 1));
                       }}
-                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                      className="w-full h-2 bg-muted rounded-lg cursor-pointer accent-primary"
                     />
                   </div>
 
@@ -542,7 +542,7 @@ export function SidePanel(props: SidePanelProps) {
                           Math.round(logSliderToValue(t, 1, 10000))
                         );
                       }}
-                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                      className="w-full h-2 bg-muted rounded-lg cursor-pointer accent-primary"
                     />
                   </div>
                 </>
@@ -590,9 +590,8 @@ export function SidePanel(props: SidePanelProps) {
 
           {activeTab === 'analysis' && (
             <div className="space-y-6">
-              <h3 className="text-sm font-semibold">Rank-Votes Chart</h3>
               {districtStats && districtStats.some(d => d.demVotes + d.repVotes > 0)
-                ? <div className="border rounded-lg px-3 py-1 bg-background"><RankVotesChart districtStats={districtStats} /></div>
+                ? <RankVotesChart districtStats={districtStats} activeDistrict={activeDistrict} onDistrictSelect={onActiveDistrictChange} />
                 : <p className="text-sm text-muted-foreground">No partisan data available. Generate a plan first.</p>
               }
             </div>

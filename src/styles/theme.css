@@ -1,5 +1,30 @@
 @custom-variant dark (&:is(.dark *));
 
+select {
+  -webkit-appearance: none;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 :root {
   --font-size: 16px;
   --background: #ffffff;
@@ -126,6 +151,10 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  table, th, td {
+    font-family: inherit;
   }
 
   /**

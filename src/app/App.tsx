@@ -4,7 +4,6 @@ import { Protocol } from 'pmtiles';
 import { SidePanel } from '@/app/components/SidePanel';
 import { MapViewer } from '@/app/components/MapViewer';
 import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
-import '@/App.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
@@ -58,6 +57,11 @@ export default function App() {
   const featureHashesRef = useRef<Record<string, string>>({});
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
+
+  useEffect(() => {
+    if (activeDistrict === 0 && drawingTool === 'paint') setDrawingTool('erase');
+    if (activeDistrict !== 0 && drawingTool === 'erase') setDrawingTool('paint');
+  }, [activeDistrict]);
   const [, setDistrictCounts] = useState<Record<number, number>>({});
 
   // Visualization mode
@@ -157,7 +161,7 @@ export default function App() {
     setWorkerReady(false);
     setDistrictGeoJson(null);
     clearMetrics();
-    setLoadingStatus('Initializing plan engine...');
+    setLoadingStatus((Math.random() < 0.01 ? 'Imbibing redistricting eggnog...' : 'Initializing redistricting engine...'));
 
     planRef.current.init(mapData.packFiles, numDistricts).then(() => {
       workerReadyRef.current = true;
@@ -312,7 +316,7 @@ export default function App() {
         window.alert(`Error: No blocks matched the loaded state. Make sure the CSV is for ${loadedState}.`);
         return;
       }
-      const maxDistrict = Math.max(...Object.values(newAssignments));
+      const maxDistrict = Object.values(newAssignments).reduce((m, v) => v > m ? v : m, 0);
       if (maxDistrict > numDistricts) {
         window.alert(`Error: CSV contains district ${maxDistrict} but the current plan only has ${numDistricts} district${numDistricts === 1 ? '' : 's'}. Recreate the map with the correct number of districts and try again.`);
         return;
@@ -342,7 +346,7 @@ export default function App() {
       // Same state — mapData/numDistricts won't change so the init effect won't re-run; call init directly.
       workerReadyRef.current = false;
       setWorkerReady(false);
-      setLoadingStatus('Initializing plan engine...');
+      setLoadingStatus((Math.random() < 1/50 ? 'Imbibing redistricting eggnog...' : 'Initializing redistricting engine...'));
       planRef.current.init(mapData.packFiles, districts).then(() => {
         workerReadyRef.current = true;
         setWorkerReady(true);
@@ -434,6 +438,7 @@ export default function App() {
             onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
             visible={mapInitialized && !loadingPack && pmtilesBufferReady}
             workerReady={workerReady}
+            activeDistrict={activeDistrict}
           />
         </MapViewer>
       </div>

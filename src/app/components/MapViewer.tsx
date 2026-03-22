@@ -24,7 +24,7 @@ export function MapViewer(props: MapViewerProps) {
       {/* Loading indicator — top center */}
       {(loadingPack || !!loadingStatus) && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-background/95 border rounded-lg shadow-lg py-3 px-4 flex items-center gap-3 z-[1000] min-w-[200px]">
-          <div className="loading-spinner" />
+          <div className="loading-spinner shrink-0" />
           <div>
             <div className="font-medium text-sm">
               {loadingPack ? 'Loading map...' : loadingStatus}

@@ -12,19 +12,20 @@ interface MapToolbarProps {
   onDistrictColorMetricChange: (metric: string) => void;
   visible: boolean;
   workerReady: boolean;
+  activeDistrict: number;
 }
 
 
-export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, visible, workerReady }: MapToolbarProps) {
+export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, visible, workerReady, activeDistrict }: MapToolbarProps) {
   if (!visible) return null;
 
   const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => {
     const isPaintTool = tool === 'paint' || tool === 'erase';
-    const disabled = isPaintTool && !workerReady;
+    const disabled = (isPaintTool && !workerReady) || (tool === 'paint' && activeDistrict === 0);
     return (
       <button
         key={tool}
-        title={disabled ? 'Initializing plan engine...' : title}
+        title={disabled ? 'Initializing redistricting engine...' : title}
         disabled={disabled}
         onClick={() => onDrawingToolChange(tool)}
         className={`p-2.5 rounded-lg transition-colors ${
