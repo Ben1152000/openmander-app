@@ -17,6 +17,12 @@ self.onmessage = (e: MessageEvent) => {
   const geoIdByIndex: Record<string, Record<number, string>> = {};
   const scalarData: Partial<Record<ScalarMetric, Record<string, number>>> = {};
   const ethnicityData: Partial<Record<EthnicityMetric, Record<string, number>>> = {};
+  // Maps each block geoId → its parent geoId at each coarser layer.
+  // Used by useMetricFeatureState to derive assignment status at non-block zoom levels.
+  const blockToParents: Record<string, { county: string; vtd: string; tract: string; group: string }> = {};
+  // Maps each coarser layer → parentGeoId → all block indices belonging to that parent.
+  // buildParentMap scans until it finds an assigned block, so partially-painted parents resolve correctly.
+  const parentBlockIndices: Record<string, Record<string, number[]>> = { county: {}, vtd: {}, tract: {}, group: {} };
 
   for (const m of SCALAR_METRICS) scalarData[m] = {};
   for (const m of ETHNICITY_METRICS) ethnicityData[m] = {};
@@ -38,6 +44,13 @@ self.onmessage = (e: MessageEvent) => {
       ETHNICITY_METRICS.map(m => [m, col(ETHNICITY_COLS[m])])
     ) as Record<EthnicityMetric, number>;
 
+    // Parent geoId columns — only present on the block layer
+    const parentCountyIdx = col('parent_county');
+    const parentVtdIdx    = col('parent_vtd');
+    const parentTractIdx  = col('parent_tract');
+    const parentGroupIdx  = col('parent_group');
+    const isBlockLayer = layerName === 'block';
+
     const indexToGeoId: Record<number, string> = {};
 
     for (let i = 1; i < lines.length; i++) {
@@ -47,6 +60,23 @@ self.onmessage = (e: MessageEvent) => {
       const idx = parseInt(cols[idxIdx]);
       const geoId = cols[geoIdIdx];
       indexToGeoId[idx] = geoId;
+
+      if (isBlockLayer && parentCountyIdx !== -1) {
+        blockToParents[geoId] = {
+          county: cols[parentCountyIdx] ?? '',
+          vtd:    parentVtdIdx   !== -1 ? (cols[parentVtdIdx]   ?? '') : '',
+          tract:  parentTractIdx !== -1 ? (cols[parentTractIdx]  ?? '') : '',
+          group:  parentGroupIdx !== -1 ? (cols[parentGroupIdx]  ?? '') : '',
+        };
+        const blockIdx = parseInt(cols[idxIdx]);
+        for (const layer of ['county', 'vtd', 'tract', 'group'] as const) {
+          const parentGeoId = blockToParents[geoId][layer];
+          if (parentGeoId) {
+            if (!parentBlockIndices[layer][parentGeoId]) parentBlockIndices[layer][parentGeoId] = [];
+            parentBlockIndices[layer][parentGeoId].push(blockIdx);
+          }
+        }
+      }
 
       const censTotal = censTotalIdx !== -1 ? (parseFloat(cols[censTotalIdx]) || 0) : -1;
       if (censTotal === 0) {
@@ -71,5 +101,5 @@ self.onmessage = (e: MessageEvent) => {
     geoIdByIndex[layerName] = indexToGeoId;
   }
 
-  (self as any).postMessage({ type: 'metrics', partisanLean, geoIdByIndex, scalarData, ethnicityData });
+  (self as any).postMessage({ type: 'metrics', partisanLean, geoIdByIndex, scalarData, ethnicityData, blockToParents, parentBlockIndices });
 };

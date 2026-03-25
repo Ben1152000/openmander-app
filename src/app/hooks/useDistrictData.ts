@@ -39,6 +39,7 @@ function buildGeoJsonFromWkb(
         const total = dem + rep;
         features.push({
           type: 'Feature',
+          id: district,
           properties: { district, color: districtColor(district - 1), partisanLean: total > 0 ? (dem - rep) / total : 0 },
           geometry: mp,
         });

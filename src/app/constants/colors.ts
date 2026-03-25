@@ -26,9 +26,26 @@ export function partisanLeanLabel(lean: number | null): string {
 
 const GOLDEN_ANGLE = 137.50776405;
 
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * c).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
 export function districtColor(index: number): string {
   const hue = (index * GOLDEN_ANGLE + 10) % 360;
-  return `hsl(${hue.toFixed(1)} 65% 52%)`;
+  return hslToHex(hue, 65, 52);
+}
+
+/** Split a #rrggbb hex color into [r, g, b] components (0–255 each). */
+export function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
 // --- Unit fill ---
@@ -68,6 +85,15 @@ export const PARTISAN_STEPS: [number, string][] = [
   [ 0.10, '#6060fa'],
   [ 0.20, '#3030ff'],  // bright blue
   [ 0.30, '#1010cf'],  // very dark blue (extreme)
+];
+
+// Unit-level partisan ramp — linear interpolation, matches the map-view fill-color expression.
+export const PARTISAN_UNIT_RAMP: [number, string][] = [
+  [-1.0, '#990000'],
+  [-0.5, '#ff4040'],
+  [ 0.0, '#e8e8e8'],
+  [ 0.5, '#4040ff'],
+  [ 1.0, '#000099'],
 ];
 
 export function partisanStepColor(lean: number): string {

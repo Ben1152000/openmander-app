@@ -55,6 +55,12 @@ export function useMapLayers(params: {
         type: 'vector',
         url: pmtilesUrl,
         scheme: 'xyz',
+        // Promote the 'index' feature property to the MapLibre feature ID so that
+        // feature states (district assignment, metric values) persist in MapLibre's
+        // style store across tile eviction and reload. Without this, states would be
+        // lost whenever a tile is evicted from the tile cache and must be re-set on
+        // every pan/zoom. With promoteId, states survive tile reload automatically.
+        promoteId: 'index',
       } as any);
 
       const fillPaint: any = {

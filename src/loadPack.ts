@@ -60,7 +60,9 @@ export async function loadPackFromDirectory(
   }
 
   let loaded = 0;
-  const total = logicalNames.length;
+  // PMTiles download is reported separately ("Downloading geometry tiles...") by the caller,
+  // so exclude it from the count to avoid the progress counter stalling at (n-1)/n.
+  const total = nonPmtilesNames.length;
 
   // Fetch non-PMTiles files (passed to WASM).
   const packFiles: Record<string, Uint8Array> = {};
@@ -80,8 +82,6 @@ export async function loadPackFromDirectory(
       const data = await fetchAndConcat(parts.map(p => `${packPath}/${p}`), signal);
       pmtilesBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
     }
-    loaded++;
-    onProgress?.(loaded, total, logicalName);
   }
 
   return { packFiles, pmtilesBuffer };

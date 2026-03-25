@@ -223,12 +223,18 @@ self.onmessage = async (e: MessageEvent) => {
     } else if (msg.type === 'set-assignments') {
       if (!wasmPlan) throw new Error('Worker not initialized');
       wasmPlan.set_assignments_u32(msg.data);
+      const setAssignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: setAssignments, done: true }, [setAssignments.buffer]);
       sendGeometries();
       sendStats();
 
     } else if (msg.type === 'assign-unit') {
       if (!wasmPlan) throw new Error('Worker not initialized');
       (wasmPlan as any).assign_unit(msg.layer, msg.geoId, msg.district);
+      // done: false — incremental update for feature-state display only; does not
+      // trigger assignmentsRef / districtCounts recalculation on the main thread.
+      const unitAssignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: unitAssignments, done: false }, [unitAssignments.buffer]);
       sendGeometries();
       sendStats();
     }

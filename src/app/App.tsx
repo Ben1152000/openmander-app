@@ -17,6 +17,7 @@ import { useDistrictData } from './hooks/useDistrictData';
 import { useMapLayers } from './hooks/useMapLayers';
 import { usePaintHandlers } from './hooks/usePaintHandlers';
 import { useVisualizationPaint } from './hooks/useVisualizationPaint';
+import { useMetricFeatureState } from './hooks/useMetricFeatureState';
 import { WorkerPlan } from '@/workerPlan';
 
 // PMTiles protocol handler - set up once
@@ -76,6 +77,11 @@ export default function App() {
 
   // Assignments and painting
   const assignmentsRef = useRef<Record<string, number>>({});
+  // Authoritative block-level assignments from WASM (index → district).
+  // Updated after every assignment-changing worker operation; used by useMetricFeatureState.
+  const blockAssignmentsRef = useRef<Uint32Array | null>(null);
+  // Called by useMetricFeatureState; invoke after any assignment change for immediate color update.
+  const metricStateUpdateRef = useRef<(() => void) | null>(null);
   const featureHashesRef = useRef<Record<string, string>>({});
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
@@ -92,6 +98,8 @@ export default function App() {
 
   // District table color metric
   const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
+  const districtColorMetricRef = useRef<string>('default');
+  districtColorMetricRef.current = districtColorMetric;
 
   // Automation settings
   const [automationRunning, setAutomationRunning] = useState(false);
@@ -109,7 +117,7 @@ export default function App() {
   // Refs so WorkerPlan callbacks always call the latest hook-provided functions.
   const applyWorkerGeometriesRef = useRef<((items: any[], dem: number[] | null, rep: number[] | null) => void) | null>(null);
   const applyWorkerStatsRef = useRef<((ds: any[], rs: any) => void) | null>(null);
-  const applyMetricsRef = useRef<((pl: any, gi: any, sd: any, ed: any) => void) | null>(null);
+  const applyMetricsRef = useRef<((pl: any, gi: any, sd: any, ed: any, bp: any, prb: any) => void) | null>(null);
 
   // Pack loading (fetches pack files, PMTiles buffer)
   const { mapData, loadingPack, pmtilesBufferReady, resetPmtilesBuffer } = usePackLoader(
@@ -119,7 +127,7 @@ export default function App() {
   );
 
   // CSV metric data (refs, populated via worker 'metrics' message)
-  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, clearMetrics, applyMetrics } = useMapMetrics();
+  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, blockToParentsRef, parentBlockIndicesRef, clearMetrics, applyMetrics } = useMapMetrics();
 
   // District geometries, stats, swatch colors
   const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData } =
@@ -148,12 +156,32 @@ export default function App() {
     activeLayerRef, geoIdByIndexRef, partisanLeanRef, ethnicityDataRef, scalarDataRef,
   });
 
+  useMetricFeatureState({
+    mapRef,
+    mapInitialized: mapInitialized && districtColorMetric !== 'default',
+    sourcesVersion,
+    visualizationMode,
+    districtColorMetric: districtColorMetric as any,
+    currentLayer,
+    blockAssignmentsRef,
+    geoIdByIndexRef,
+    parentBlockIndicesRef,
+    partisanLeanRef,
+    ethnicityDataRef,
+    scalarDataRef,
+    updateTriggerRef: metricStateUpdateRef,
+  });
+
   // Spawn plan worker eagerly so WASM compilation overlaps with pack fetching.
   useEffect(() => {
     const worker = new Worker(new URL('../planWorker.ts', import.meta.url), { type: 'module' });
     planRef.current = new WorkerPlan(worker, {
       onLog: (message) => console.log(message),
       onAssignments: (data, done) => {
+        // Always update the authoritative block-level array (source of truth for feature states).
+        blockAssignmentsRef.current = data;
+        // Immediately refresh metric feature states (painting, automation, import).
+        metricStateUpdateRef.current?.();
         if (done) {
           const blockMap = geoIdByIndexRef.current['block'];
           if (blockMap) {
@@ -195,7 +223,8 @@ export default function App() {
     metricsWorkerRef.current?.terminate();
     const mw = new Worker(new URL('../metricsWorker.ts', import.meta.url), { type: 'module' });
     mw.onmessage = (e) => {
-      applyMetricsRef.current?.(e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData);
+      applyMetricsRef.current?.(e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData, e.data.blockToParents ?? {}, e.data.parentBlockIndices ?? {});
+      metricStateUpdateRef.current?.();
       mw.terminate();
     };
     mw.onerror = (e) => console.error('[MetricsWorker] Error:', e.message, e);
@@ -244,7 +273,7 @@ export default function App() {
             if (map.getLayer(`units-${name}-fill`))
               map.setPaintProperty(`units-${name}-fill`, 'fill-opacity', isActive ? 0.7 : 0);
             if (map.getLayer(`units-${name}-line`)) {
-              const lineOpacity = !isActive || visualizationModeRef.current === 'map' ? 0 : 0.5;
+              const lineOpacity = !isActive || visualizationModeRef.current === 'map' || districtColorMetricRef.current !== 'default' ? 0 : 0.5;
               map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
             }
           }

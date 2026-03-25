@@ -1,0 +1,245 @@
+/**
+ * useMetricFeatureState — native MapLibre feature-state visualization.
+ *
+ * Both rendering strategies share the same feature-state based fill expression:
+ *
+ * Non-block layers (county, VTD, etc.):
+ *   Calls setFeatureState for every feature in the layer upfront (county: ~100,
+ *   VTD: ~thousands). promoteId: 'index' ensures states persist across tile
+ *   eviction/reload, so panning to new areas picks them up automatically — no
+ *   event listeners or queryRenderedFeatures needed.
+ *
+ * Block layer:
+ *   Too many features to set all states upfront, so uses queryRenderedFeatures
+ *   for visible features and listens on sourcedata for newly loaded tiles.
+ *   Both updateStates and applyFill run synchronously (same as non-block) to
+ *   avoid a flash of stale colors on metric/view transitions.
+ */
+
+import { useEffect, useRef } from 'react';
+import type { Map as MaplibreMap } from 'maplibre-gl';
+import type { MutableRefObject } from 'react';
+import {
+  PARTISAN_UNIT_RAMP, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS,
+} from '@/app/constants/colors';
+import { ETHNICITY_METRICS, SCALAR_METRICS } from '@/app/constants/metrics';
+import type { EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
+
+type ColorMetric = 'partisan' | ScalarMetric | EthnicityMetric;
+
+const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useMetricFeatureState(params: {
+  mapRef: MutableRefObject<MaplibreMap | null>;
+  mapInitialized: boolean;
+  sourcesVersion: number;
+  visualizationMode: 'districts' | 'map';
+  districtColorMetric: ColorMetric;
+  currentLayer: string;
+  blockAssignmentsRef: MutableRefObject<Uint32Array | null>;
+  geoIdByIndexRef: MutableRefObject<Record<string, Record<number, string>>>;
+  parentBlockIndicesRef: MutableRefObject<Record<string, Record<string, number[]>>>;
+  partisanLeanRef: MutableRefObject<Record<string, number>>;
+  ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
+  scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
+  /** Ref to receive a direct-call trigger. Set by this hook; caller invokes it after assignments change. */
+  updateTriggerRef?: MutableRefObject<(() => void) | null>;
+}) {
+  const {
+    mapRef, mapInitialized, sourcesVersion, visualizationMode, districtColorMetric, currentLayer,
+    blockAssignmentsRef, geoIdByIndexRef, parentBlockIndicesRef,
+    partisanLeanRef, ethnicityDataRef, scalarDataRef, updateTriggerRef,
+  } = params;
+
+  const isDistrictView = visualizationMode === 'districts';
+  const isBlockLayer = currentLayer === 'block';
+
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) return;
+    const map = mapRef.current;
+    const sourceId = 'units-all';
+    const fillLayerId = `units-${currentLayer}-fill`;
+    if (!map.getLayer(fillLayerId)) return;
+
+    // ── Build parent district map for coarser layers ──────────────────────────
+    // O(numParentFeatures): looks up one representative block index per parent
+    // unit (precomputed in metricsWorker) rather than iterating all blocks.
+
+    const buildParentMap = (data: Uint32Array): Map<string, number> => {
+      const allBlocks = parentBlockIndicesRef.current[currentLayer];
+      if (!allBlocks) return new Map();
+      const newMap = new Map<string, number>();
+      for (const [parentGeoId, blockIndices] of Object.entries(allBlocks)) {
+        for (const blockIdx of blockIndices) {
+          const district = data[blockIdx];
+          if (district) { newMap.set(parentGeoId, district); break; }
+        }
+      }
+      return newMap;
+    };
+
+    // ── Shared: feature-state fill expression ─────────────────────────────────
+
+    let metricStateKey: string;
+    let metricExpr: any;
+
+    if (districtColorMetric === 'partisan') {
+      metricStateKey = 'partisanLean';
+      metricExpr = [
+        'case',
+        ['==', ['feature-state', 'partisanLean'], null], '#e8e8e8',
+        ['<',  ['feature-state', 'partisanLean'], -1.5], '#d8d8d8',
+        ['interpolate', ['linear'], ['feature-state', 'partisanLean'],
+          ...PARTISAN_UNIT_RAMP.flatMap(([val, color]) => [val, color])],
+      ];
+    } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
+      const metric = districtColorMetric as EthnicityMetric;
+      metricStateKey = `conc_${metric.replace('_pct', '')}`;
+      const [stops, zeroGroupColor, zeroPopColor] = ETHNICITY_COLOR_RANGE[metric];
+      metricExpr = [
+        'case', ['!=', ['feature-state', metricStateKey], null],
+        ['case',
+          ['<',  ['feature-state', metricStateKey], 0], zeroPopColor,
+          ['==', ['feature-state', metricStateKey], 0], zeroGroupColor,
+          ['interpolate', ['linear'], ['feature-state', metricStateKey], ...stops.flat()]],
+        stops[0][1],
+      ];
+    } else {
+      const metric = districtColorMetric as ScalarMetric;
+      metricStateKey = `scalar_${metric}`;
+      const ramp = SCALAR_COLOR_RAMPS[metric];
+      metricExpr = [
+        'case', ['!=', ['feature-state', metricStateKey], null],
+        ['case',
+          ['<', ['feature-state', metricStateKey], 0], '#d8d8d8',
+          ['interpolate', ['linear'], ['feature-state', metricStateKey], ...ramp.flat()]],
+        '#ffffff',
+      ];
+    }
+
+    const fillColor = isDistrictView
+      ? ['case', ['>', ['coalesce', ['feature-state', 'district'], 0], 0], 'rgba(0,0,0,0)', metricExpr]
+      : metricExpr;
+
+    // ── Non-block: set states for all features upfront ────────────────────────
+    // Feature count is small (county: ~100, VTD: ~thousands). promoteId ensures
+    // states persist across tile eviction so no sourcedata listener is needed.
+    // Both updateStates and applyFill run synchronously (no RAF) so transitions
+    // are instantaneous — states are written before the expression switches,
+    // eliminating any flash of default colors between metric/view changes.
+
+    if (!isBlockLayer) {
+      const applyFill = () => {
+        if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', fillColor);
+        for (const name of ALL_LAYERS) {
+          if (map.getLayer(`units-${name}-line`)) map.setPaintProperty(`units-${name}-line`, 'line-opacity', 0);
+        }
+      };
+
+      const updateStates = () => {
+        const data = blockAssignmentsRef.current;
+        const indexMap = geoIdByIndexRef.current[currentLayer] ?? {};
+        const parentMap = isDistrictView && data ? buildParentMap(data) : new Map<string, number>();
+        for (const [indexStr, geoId] of Object.entries(indexMap)) {
+          if (!geoId) continue;
+          const featureIndex = parseInt(indexStr);
+          const district = parentMap.get(geoId) ?? 0;
+          const stateUpdate: Record<string, number> = { district };
+          if (districtColorMetric === 'partisan') {
+            const lean = partisanLeanRef.current[geoId];
+            if (lean !== undefined) stateUpdate[metricStateKey] = lean;
+          } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
+            const v = ethnicityDataRef.current[districtColorMetric as EthnicityMetric]?.[geoId];
+            if (v !== undefined) stateUpdate[metricStateKey] = v;
+          } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
+            const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
+            if (v !== undefined) stateUpdate[metricStateKey] = v;
+          }
+          map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id: featureIndex }, stateUpdate);
+        }
+      };
+
+      // States before expression: the new fill expression lands on already-correct data.
+      updateStates();
+      applyFill();
+
+      // The trigger ref is called from painting (not from this effect). Defer to the next
+      // animation frame so rapid paint events don't block the main thread. Multiple calls
+      // before the frame fires are coalesced into a single update.
+      let pendingRaf: number | null = null;
+      if (updateTriggerRef) {
+        updateTriggerRef.current = () => {
+          if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
+          pendingRaf = requestAnimationFrame(() => { pendingRaf = null; updateStates(); });
+        };
+      }
+
+      return () => {
+        if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
+        if (updateTriggerRef) updateTriggerRef.current = null;
+      };
+    }
+
+    // ── Block layer: queryRenderedFeatures (too many blocks to set all upfront) ──
+
+    const applyFill = () => {
+      for (const name of ALL_LAYERS) {
+        if (map.getLayer(`units-${name}-fill`)) map.setPaintProperty(`units-${name}-fill`, 'fill-color', fillColor);
+        if (map.getLayer(`units-${name}-line`)) map.setPaintProperty(`units-${name}-line`, 'line-opacity', 0);
+      }
+    };
+
+    const updateStates = () => {
+      if (!map.getLayer(fillLayerId)) return;
+      const data = blockAssignmentsRef.current;
+      const indexMap = geoIdByIndexRef.current['block'] ?? {};
+      const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
+      for (const feature of features) {
+        const featureIndex = parseInt(feature.properties?.index);
+        const geoId = indexMap[featureIndex];
+        if (!geoId) continue;
+        const district = data ? (data[featureIndex] ?? 0) : 0;
+        const stateUpdate: Record<string, number> = { district };
+        if (districtColorMetric === 'partisan') {
+          const lean = partisanLeanRef.current[geoId];
+          if (lean !== undefined) stateUpdate[metricStateKey] = lean;
+        } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
+          const v = ethnicityDataRef.current[districtColorMetric as EthnicityMetric]?.[geoId];
+          if (v !== undefined) stateUpdate[metricStateKey] = v;
+        } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
+          const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
+          if (v !== undefined) stateUpdate[metricStateKey] = v;
+        }
+        map.setFeatureState({ source: sourceId, sourceLayer: 'block', id: featureIndex }, stateUpdate);
+      }
+    };
+
+    updateStates();
+    applyFill();
+
+    let pendingRaf: number | null = null;
+    if (updateTriggerRef) {
+      updateTriggerRef.current = () => {
+        if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
+        pendingRaf = requestAnimationFrame(() => { pendingRaf = null; updateStates(); });
+      };
+    }
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleUpdate = () => {
+      if (debounceTimer != null) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(updateStates, 50);
+    };
+    const handleSourceData = (e: any) => { if (e.sourceId === sourceId) scheduleUpdate(); };
+    map.on('sourcedata', handleSourceData);
+
+    return () => {
+      map.off('sourcedata', handleSourceData);
+      if (debounceTimer != null) clearTimeout(debounceTimer);
+      if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
+      if (updateTriggerRef) updateTriggerRef.current = null;
+    };
+  }, [mapInitialized, sourcesVersion, visualizationMode, districtColorMetric, currentLayer]); // eslint-disable-line react-hooks/exhaustive-deps
+}
