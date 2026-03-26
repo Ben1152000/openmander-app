@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { PMTiles } from 'pmtiles';
 import { loadPackFromDirectory } from '@/loadPack';
 import { loadAndCachePMTiles, cacheAndSetPMTiles, setPMTilesBuffer } from '@/pmtilesCache';
 import { STATE_CONFIGS } from '@/app/constants/config';
+
+export type LayerZoomRanges = Record<string, { minzoom: number; maxzoom: number }>;
 
 export type PackData = { packFiles: Record<string, Uint8Array> };
 
@@ -13,6 +16,7 @@ export function usePackLoader(
   const [mapData, setMapData] = useState<PackData | null>(null);
   const [loadingPack, setLoadingPack] = useState(false);
   const [pmtilesBufferReady, setPmtilesBufferReady] = useState(false);
+  const [layerZoomRanges, setLayerZoomRanges] = useState<LayerZoomRanges>({});
 
   // Stable ref so the effect doesn't re-run when the callback identity changes.
   const onBeforeLoadRef = useRef(onBeforeLoad);
@@ -29,6 +33,7 @@ export function usePackLoader(
       onBeforeLoadRef.current();
 
       setPmtilesBufferReady(false);
+      setLayerZoomRanges({});
       setMapData(null);
       setLoadingPack(true);
       setLoadingStatus('Loading pack files...');
@@ -69,6 +74,20 @@ export function usePackLoader(
 
         setPmtilesBufferReady(true);
 
+        // Read vector layer zoom ranges from PMTiles metadata (async, non-blocking).
+        // Our fetch interceptor serves range requests from the in-memory buffer, so
+        // this works without an extra network round-trip.
+        new PMTiles(pmtilesAbsUrl).getMetadata().then((metadata: any) => {
+          if (signal.aborted) return;
+          const ranges: LayerZoomRanges = {};
+          for (const layer of (metadata?.vector_layers ?? [])) {
+            if (layer.id && layer.minzoom !== undefined && layer.maxzoom !== undefined) {
+              ranges[layer.id] = { minzoom: layer.minzoom, maxzoom: layer.maxzoom };
+            }
+          }
+          if (Object.keys(ranges).length > 0) setLayerZoomRanges(ranges);
+        }).catch(() => { /* silently fall back to hardcoded thresholds */ });
+
         setLoadingStatus('Initializing map...');
         await new Promise(resolve => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); });
         if (signal.aborted) return;
@@ -89,5 +108,5 @@ export function usePackLoader(
     return () => controller.abort();
   }, [loadedState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { mapData, loadingPack, pmtilesBufferReady, resetPmtilesBuffer: () => setPmtilesBufferReady(false) };
+  return { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, resetPmtilesBuffer: () => setPmtilesBufferReady(false) };
 }

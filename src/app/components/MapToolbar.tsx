@@ -1,7 +1,16 @@
 import { Hand, Paintbrush, Eraser, Layers } from 'lucide-react';
 import type React from 'react';
+import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK } from '@/app/constants/config';
+import type { LayerZoomRanges } from '@/app/hooks/usePackLoader';
 
 export type DrawingTool = 'pan' | 'paint' | 'erase';
+
+const LAYER_OPTIONS: { value: string; label: string; minZoom: number }[] = [
+  { value: 'county', label: 'County', minZoom: 0 },
+  { value: 'tract',  label: 'Tract',  minZoom: ZOOM_THRESHOLD_COUNTY_TO_VTD },
+  { value: 'vtd',    label: 'VTD',    minZoom: ZOOM_THRESHOLD_COUNTY_TO_VTD },
+  { value: 'block',  label: 'Block',  minZoom: ZOOM_THRESHOLD_VTD_TO_BLOCK },
+];
 
 interface MapToolbarProps {
   drawingTool: DrawingTool;
@@ -10,14 +19,28 @@ interface MapToolbarProps {
   onVisualizationModeChange: (mode: 'districts' | 'map') => void;
   districtColorMetric: string;
   onDistrictColorMetricChange: (metric: string) => void;
+  layerOverride: string | null;
+  onLayerOverrideChange: (layer: string | null) => void;
+  currentZoom: number;
+  layerZoomRanges: LayerZoomRanges;
   visible: boolean;
   workerReady: boolean;
   activeDistrict: number;
 }
 
 
-export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, visible, workerReady, activeDistrict }: MapToolbarProps) {
+export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, visible, workerReady, activeDistrict }: MapToolbarProps) {
   if (!visible) return null;
+
+  const hasRanges = Object.keys(layerZoomRanges).length > 0;
+  const availableOptions = LAYER_OPTIONS.filter(o => {
+    if (hasRanges) {
+      const range = layerZoomRanges[o.value];
+      if (!range) return false;
+      return currentZoom >= range.minzoom && currentZoom <= range.maxzoom;
+    }
+    return currentZoom >= o.minZoom;
+  });
 
   const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => {
     const isPaintTool = tool === 'paint' || tool === 'erase';
@@ -63,6 +86,22 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
             {visualizationMode === 'districts' ? 'District View' : 'Map View'}
           </span>
         </button>
+
+        {/* Layer selector */}
+        <div className="flex items-center bg-white rounded-lg shadow-lg px-3">
+          <select
+            value={layerOverride ?? 'auto'}
+            onChange={e => onLayerOverrideChange(e.target.value === 'auto' ? null : e.target.value)}
+            className="text-sm font-medium text-gray-700 bg-transparent cursor-pointer outline-none py-[9.5px]"
+          >
+            <option value="auto">
+              Auto ({LAYER_OPTIONS.findLast(o => currentZoom >= o.minZoom)?.label ?? 'County'})
+            </option>
+            {availableOptions.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Metric dropdown */}
         <div className="flex items-center bg-white rounded-lg shadow-lg px-3">

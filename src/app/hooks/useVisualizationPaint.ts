@@ -49,49 +49,9 @@ export function useVisualizationPaint(params: {
   const districtLayersAddedRef = useRef(false);
   const districtGeoJsonLoadedRef = useRef<GeoJSON.FeatureCollection | null>(null);
 
-  // ── District feature-state colors ────────────────────────────────────────────
-  // Runs whenever the metric or district data changes. Calls setFeatureState for
-  // each district (never setPaintProperty), so MapLibre evaluates the change as a
-  // hash-map lookup at render time — same mechanism as unit feature states —
-  // guaranteeing district and unit colors update in the same frame.
-  useEffect(() => {
-    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) return;
-    if (!districtGeoJson?.features.length) return;
-    const map = mapRef.current;
-    if (!map.getSource('district-boundaries')) return;
-
-    const statsMap = new Map(districtStats?.map(d => [d.district, d]) ?? []);
-
-    for (const feature of districtGeoJson.features) {
-      const district = feature.properties!.district as number;
-      let hex: string;
-
-      if (districtColorMetric === 'partisan') {
-        hex = partisanStepColor(feature.properties!.partisanLean as number);
-      } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
-        const stat = statsMap.get(district);
-        if (stat) {
-          const metric = districtColorMetric as EthnicityMetric;
-          const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
-          const pct = (stat[ETHNICITY_STAT_KEYS[metric]] as number) / 100;
-          hex = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
-        } else hex = '#888888';
-      } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
-        const stat = statsMap.get(district);
-        if (stat) {
-          const metric = districtColorMetric as ScalarMetric;
-          hex = rampColor(Math.log1p(stat[SCALAR_STAT_KEYS[metric]] as number), SCALAR_COLOR_RAMPS[metric]);
-        } else hex = '#888888';
-      } else {
-        hex = feature.properties!.color as string;
-      }
-
-      const [r, g, b] = hexToRgb(hex);
-      map.setFeatureState({ source: 'district-boundaries', id: district }, { r, g, b });
-    }
-  }, [mapInitialized, sourcesVersion, districtColorMetric, districtGeoJson, districtStats]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── District overlay + base layer coloring ───────────────────────────────────
+  // Declared first so the district-boundaries source is always added before the
+  // feature-state effect below tries to call setFeatureState on it.
   useEffect(() => {
     visualizationModeRef.current = visualizationMode;
 
@@ -160,4 +120,46 @@ export function useVisualizationPaint(params: {
       }
     }
   }, [visualizationMode, districtColorMetric, mapInitialized, districtGeoJson, sourcesVersion, currentLayer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── District feature-state colors ────────────────────────────────────────────
+  // Declared after the overlay effect so the district-boundaries source is guaranteed
+  // to exist when this runs. Calls setFeatureState for each district (never
+  // setPaintProperty), so MapLibre evaluates the change as a hash-map lookup at
+  // render time — same mechanism as unit feature states.
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) return;
+    if (!districtGeoJson?.features.length) return;
+    const map = mapRef.current;
+    if (!map.getSource('district-boundaries')) return;
+
+    const statsMap = new Map(districtStats?.map(d => [d.district, d]) ?? []);
+
+    for (const feature of districtGeoJson.features) {
+      const district = feature.properties!.district as number;
+      let hex: string;
+
+      if (districtColorMetric === 'partisan') {
+        hex = partisanStepColor(feature.properties!.partisanLean as number);
+      } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
+        const stat = statsMap.get(district);
+        if (stat) {
+          const metric = districtColorMetric as EthnicityMetric;
+          const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
+          const pct = (stat[ETHNICITY_STAT_KEYS[metric]] as number) / 100;
+          hex = pct === 0 ? zeroGroupColor : rampColor(pct, stops);
+        } else hex = '#888888';
+      } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
+        const stat = statsMap.get(district);
+        if (stat) {
+          const metric = districtColorMetric as ScalarMetric;
+          hex = rampColor(Math.log1p(stat[SCALAR_STAT_KEYS[metric]] as number), SCALAR_COLOR_RAMPS[metric]);
+        } else hex = '#888888';
+      } else {
+        hex = feature.properties!.color as string;
+      }
+
+      const [r, g, b] = hexToRgb(hex);
+      map.setFeatureState({ source: 'district-boundaries', id: district }, { r, g, b });
+    }
+  }, [mapInitialized, sourcesVersion, districtColorMetric, districtGeoJson, districtStats]); // eslint-disable-line react-hooks/exhaustive-deps
 }

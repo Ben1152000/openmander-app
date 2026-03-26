@@ -11,9 +11,8 @@
  *
  * Block layer:
  *   Too many features to set all states upfront, so uses queryRenderedFeatures
- *   for visible features and listens on sourcedata for newly loaded tiles.
- *   Both updateStates and applyFill run synchronously (same as non-block) to
- *   avoid a flash of stale colors on metric/view transitions.
+ *   for visible features and listens on 'idle' (fires once MapLibre fully settles)
+ *   to re-apply states after panning loads new tiles.
  */
 
 import { useEffect, useRef } from 'react';
@@ -67,8 +66,8 @@ export function useMetricFeatureState(params: {
     // O(numParentFeatures): looks up one representative block index per parent
     // unit (precomputed in metricsWorker) rather than iterating all blocks.
 
-    const buildParentMap = (data: Uint32Array): Map<string, number> => {
-      const allBlocks = parentBlockIndicesRef.current[currentLayer];
+    const buildParentMap = (data: Uint32Array, layer: string): Map<string, number> => {
+      const allBlocks = parentBlockIndicesRef.current[layer];
       if (!allBlocks) return new Map();
       const newMap = new Map<string, number>();
       for (const [parentGeoId, blockIndices] of Object.entries(allBlocks)) {
@@ -79,6 +78,11 @@ export function useMetricFeatureState(params: {
       }
       return newMap;
     };
+
+    // Layers that are always preloaded (visibility:visible, opacity:0 when inactive).
+    // Keep their fill expressions and feature states in sync even when not active,
+    // so there's no flash when auto-switching to them.
+    const ALWAYS_PRELOADED = ['county', 'vtd'];
 
     // ── Shared: feature-state fill expression ─────────────────────────────────
 
@@ -132,16 +136,21 @@ export function useMetricFeatureState(params: {
 
     if (!isBlockLayer) {
       const applyFill = () => {
-        if (map.getLayer(fillLayerId)) map.setPaintProperty(fillLayerId, 'fill-color', fillColor);
+        // Update fill expression for active layer + all always-preloaded layers so
+        // switching back to them never shows a stale expression for one frame.
+        const layersToSync = new Set([currentLayer, ...ALWAYS_PRELOADED]);
+        for (const name of layersToSync) {
+          if (map.getLayer(`units-${name}-fill`)) map.setPaintProperty(`units-${name}-fill`, 'fill-color', fillColor);
+        }
         for (const name of ALL_LAYERS) {
           if (map.getLayer(`units-${name}-line`)) map.setPaintProperty(`units-${name}-line`, 'line-opacity', 0);
         }
       };
 
-      const updateStates = () => {
+      const updateLayerStates = (layerName: string) => {
         const data = blockAssignmentsRef.current;
-        const indexMap = geoIdByIndexRef.current[currentLayer] ?? {};
-        const parentMap = isDistrictView && data ? buildParentMap(data) : new Map<string, number>();
+        const indexMap = geoIdByIndexRef.current[layerName] ?? {};
+        const parentMap = isDistrictView && data ? buildParentMap(data, layerName) : new Map<string, number>();
         for (const [indexStr, geoId] of Object.entries(indexMap)) {
           if (!geoId) continue;
           const featureIndex = parseInt(indexStr);
@@ -157,8 +166,13 @@ export function useMetricFeatureState(params: {
             const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
             if (v !== undefined) stateUpdate[metricStateKey] = v;
           }
-          map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id: featureIndex }, stateUpdate);
+          map.setFeatureState({ source: sourceId, sourceLayer: layerName, id: featureIndex }, stateUpdate);
         }
+      };
+
+      const updateStates = () => {
+        const layersToSync = new Set([currentLayer, ...ALWAYS_PRELOADED]);
+        for (const layer of layersToSync) updateLayerStates(layer);
       };
 
       // States before expression: the new fill expression lands on already-correct data.
@@ -227,17 +241,10 @@ export function useMetricFeatureState(params: {
       };
     }
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleUpdate = () => {
-      if (debounceTimer != null) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(updateStates, 50);
-    };
-    const handleSourceData = (e: any) => { if (e.sourceId === sourceId) scheduleUpdate(); };
-    map.on('sourcedata', handleSourceData);
+    map.on('idle', updateStates);
 
     return () => {
-      map.off('sourcedata', handleSourceData);
-      if (debounceTimer != null) clearTimeout(debounceTimer);
+      map.off('idle', updateStates);
       if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
       if (updateTriggerRef) updateTriggerRef.current = null;
     };

@@ -8,6 +8,7 @@ import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
+  ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK,
 } from './constants/config';
 import type { EthnicityMetric, ScalarMetric } from './constants/metrics';
 import { useSidebarResize } from './hooks/useSidebarResize';
@@ -19,6 +20,23 @@ import { usePaintHandlers } from './hooks/usePaintHandlers';
 import { useVisualizationPaint } from './hooks/useVisualizationPaint';
 import { useMetricFeatureState } from './hooks/useMetricFeatureState';
 import { WorkerPlan } from '@/workerPlan';
+
+// How many zoom levels before the VTD→block threshold to start prefetching the block layer.
+const BLOCK_PRELOAD_RANGE = 0.5;
+
+/**
+ * Returns 'active' | 'preload' | 'none' for a layer given current zoom.
+ * 'preload' means visibility:visible, opacity:0 — tiles are fetched but invisible.
+ * County and VTD are always preloaded (cheap). Block only near its threshold.
+ * Manual overrides use 'none' for all inactive layers.
+ */
+function layerDisplayMode(name: string, activeLayer: string, zoom: number, layerOverride: string | null): 'active' | 'preload' | 'none' {
+  if (name === activeLayer) return 'active';
+  if (layerOverride !== null) return 'none';
+  if (name === 'county' || name === 'vtd') return 'preload';
+  if (name === 'block' && zoom >= ZOOM_THRESHOLD_VTD_TO_BLOCK - BLOCK_PRELOAD_RANGE) return 'preload';
+  return 'none';
+}
 
 // PMTiles protocol handler - set up once
 let pmtilesProtocolSetup = false;
@@ -75,6 +93,11 @@ export default function App() {
   const loadedSourcesRef = useRef<Set<string>>(new Set());
   const [sourcesVersion, setSourcesVersion] = useState(0);
 
+  // Layer override: null = auto (zoom-based), otherwise a fixed layer name
+  const [layerOverride, setLayerOverrideState] = useState<string | null>(null);
+  const layerOverrideRef = useRef<string | null>(null);
+  const setLayerOverride = (v: string | null) => { layerOverrideRef.current = v; setLayerOverrideState(v); };
+
   // Assignments and painting
   const assignmentsRef = useRef<Record<string, number>>({});
   // Authoritative block-level assignments from WASM (index → district).
@@ -120,7 +143,7 @@ export default function App() {
   const applyMetricsRef = useRef<((pl: any, gi: any, sd: any, ed: any, bp: any, prb: any) => void) | null>(null);
 
   // Pack loading (fetches pack files, PMTiles buffer)
-  const { mapData, loadingPack, pmtilesBufferReady, resetPmtilesBuffer } = usePackLoader(
+  const { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, resetPmtilesBuffer } = usePackLoader(
     loadedState,
     setLoadingStatus,
     () => { setDistrictGeoJson(null); },
@@ -140,6 +163,40 @@ export default function App() {
 
   // Map layers (PMTiles vector tile source setup)
   useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef });
+
+  // Apply layer override (or revert to zoom-based layer when override is cleared)
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) return;
+    const map = mapRef.current;
+    const targetLayer = layerOverride ?? getLayerForZoom(map.getZoom());
+    previousLayerRef.current = targetLayer;
+    activeLayerRef.current = targetLayer;
+    const currentZoom = map.getZoom();
+    const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
+    for (const name of allLayers) {
+      const mode = layerDisplayMode(name, targetLayer, currentZoom, layerOverride);
+      const isActive = mode === 'active';
+      const visible = mode !== 'none';
+      if (map.getLayer(`units-${name}-fill`)) {
+        map.setLayoutProperty(`units-${name}-fill`, 'visibility', visible ? 'visible' : 'none');
+        map.setPaintProperty(`units-${name}-fill`, 'fill-opacity', isActive ? 0.7 : 0);
+      }
+      if (map.getLayer(`units-${name}-line`)) {
+        map.setLayoutProperty(`units-${name}-line`, 'visibility', visible ? 'visible' : 'none');
+        const lineOpacity = !isActive || visualizationModeRef.current === 'map' || districtColorMetricRef.current !== 'default' ? 0 : 0.5;
+        map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
+      }
+    }
+    setActiveLayer(targetLayer);
+    setCurrentLayer(targetLayer);
+  }, [layerOverride, mapInitialized, sourcesVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-clear layer override when the user zooms out past a layer's minimum zoom.
+  useEffect(() => {
+    if (!layerOverride || Object.keys(layerZoomRanges).length === 0) return;
+    const range = layerZoomRanges[layerOverride];
+    if (range && (currentZoom < range.minzoom || currentZoom > range.maxzoom)) setLayerOverride(null);
+  }, [currentZoom, layerZoomRanges, layerOverride]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Paint/erase click handlers
   usePaintHandlers({
@@ -207,8 +264,10 @@ export default function App() {
   useEffect(() => {
     if (!mapData?.packFiles || !numDistricts || !planRef.current) return;
 
+    blockAssignmentsRef.current = null;
     workerReadyRef.current = false;
     setWorkerReady(false);
+    setDrawingTool('pan');
     setDistrictGeoJson(null);
     clearMetrics();
     setLoadingStatus((Math.random() < 0.01 ? 'Imbibing redistricting eggnog...' : 'Initializing redistricting engine...'));
@@ -260,6 +319,9 @@ export default function App() {
     map.on('load', () => {
       map.on('zoom', () => {
         const zoom = map.getZoom();
+        setCurrentZoom(zoom);
+        if (layerOverrideRef.current) return; // fixed override: skip auto-switching
+
         const newLayer = getLayerForZoom(zoom);
         const previousLayer = previousLayerRef.current;
 
@@ -269,10 +331,15 @@ export default function App() {
 
           const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
           for (const name of allLayers) {
-            const isActive = name === newLayer;
-            if (map.getLayer(`units-${name}-fill`))
+            const mode = layerDisplayMode(name, newLayer, zoom, null);
+            const isActive = mode === 'active';
+            const visible = mode !== 'none';
+            if (map.getLayer(`units-${name}-fill`)) {
+              map.setLayoutProperty(`units-${name}-fill`, 'visibility', visible ? 'visible' : 'none');
               map.setPaintProperty(`units-${name}-fill`, 'fill-opacity', isActive ? 0.7 : 0);
+            }
             if (map.getLayer(`units-${name}-line`)) {
+              map.setLayoutProperty(`units-${name}-line`, 'visibility', visible ? 'visible' : 'none');
               const lineOpacity = !isActive || visualizationModeRef.current === 'map' || districtColorMetricRef.current !== 'default' ? 0 : 0.5;
               map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
             }
@@ -281,7 +348,6 @@ export default function App() {
           setActiveLayer(newLayer);
           setCurrentLayer(newLayer);
         }
-        setCurrentZoom(zoom);
       });
 
       const initialZoom = map.getZoom();
@@ -379,6 +445,7 @@ export default function App() {
         }, {})
       );
       planRef.current?.setAssignments(arr);
+      setVisualizationMode('districts');
       if (unmatched > 0) {
         window.alert(`Imported ${matched.toLocaleString()} blocks. Warning: ${unmatched.toLocaleString()} rows did not match any block in the loaded state.`);
       } else {
@@ -391,12 +458,17 @@ export default function App() {
     assignmentsRef.current = {};
     setDistrictCounts({});
     resetDistrictData();
+    setVisualizationMode('districts');
+    setDistrictColorMetric('default');
+    setLayerOverride(null);
     if (state !== loadedState) {
       resetPmtilesBuffer();
     } else if (mapData?.packFiles && planRef.current) {
       // Same state — mapData/numDistricts won't change so the init effect won't re-run; call init directly.
+      blockAssignmentsRef.current = null;
       workerReadyRef.current = false;
       setWorkerReady(false);
+      setDrawingTool('pan');
       setLoadingStatus((Math.random() < 1/50 ? 'Imbibing redistricting eggnog...' : 'Initializing redistricting engine...'));
       planRef.current.init(mapData.packFiles, districts).then(() => {
         workerReadyRef.current = true;
@@ -478,6 +550,10 @@ export default function App() {
         onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
         districtColorMetric={districtColorMetric}
         onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
+        layerOverride={layerOverride}
+        onLayerOverrideChange={setLayerOverride}
+        currentZoom={currentZoom}
+        layerZoomRanges={layerZoomRanges}
         visible={mapInitialized && !loadingPack && pmtilesBufferReady}
         workerReady={workerReady}
         activeDistrict={activeDistrict}

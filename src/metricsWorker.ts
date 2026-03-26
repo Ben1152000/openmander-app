@@ -9,6 +9,26 @@
 import { ETHNICITY_METRICS, ETHNICITY_COLS, SCALAR_METRICS } from './app/constants/metrics';
 import type { EthnicityMetric, ScalarMetric } from './app/constants/metrics';
 
+/** Parse a single CSV line, respecting RFC 4180 double-quote escaping. */
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } // escaped quote
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current); current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
 self.onmessage = (e: MessageEvent) => {
   const { packFiles } = e.data as { packFiles: Record<string, Uint8Array> };
 
@@ -32,7 +52,7 @@ self.onmessage = (e: MessageEvent) => {
     if (!csvFile) continue;
 
     const lines = new TextDecoder().decode(csvFile).split('\n');
-    const headers = lines[0].split(',');
+    const headers = lines[0].split(','); // header row has no quoted fields
     const col = (name: string) => headers.indexOf(name);
 
     const idxIdx = col('idx'), geoIdIdx = col('geo_id');
@@ -56,7 +76,7 @@ self.onmessage = (e: MessageEvent) => {
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-      const cols = line.split(',');
+      const cols = parseCSVLine(line);
       const idx = parseInt(cols[idxIdx]);
       const geoId = cols[geoIdIdx];
       indexToGeoId[idx] = geoId;
