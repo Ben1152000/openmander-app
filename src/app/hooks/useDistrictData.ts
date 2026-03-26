@@ -3,13 +3,14 @@ import { parseWkbMultiPolygon } from '@/app/lib/wkb';
 import {
   districtColor, rampColor, partisanStepColor,
   ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS,
+  ETH_COLORS,
 } from '@/app/constants/colors';
 import {
-  ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS,
+  ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, ethCatFromStat,
 } from '@/app/constants/metrics';
-import type { DistrictStat, EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
+import type { DistrictStat, EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
 
-type ColorMetric = 'default' | 'partisan' | ScalarMetric | EthnicityMetric;
+type ColorMetric = 'default' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
 
 export interface RegionStats {
   totalPop: number;
@@ -85,6 +86,9 @@ export function useDistrictData(
         const [stops, zeroGroupColor] = ETHNICITY_COLOR_RANGE[metric];
         const pct = (d[ETHNICITY_STAT_KEYS[metric]] as number) / 100;
         return [d.district, pct === 0 ? zeroGroupColor : rampColor(pct, stops)];
+      }
+      if (districtColorMetric === 'ethnicity') {
+        return [d.district, ETH_COLORS[ethCatFromStat(d)]];
       }
       if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
         const metric = districtColorMetric as ScalarMetric;

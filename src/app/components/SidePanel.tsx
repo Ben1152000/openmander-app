@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import type { DistrictStat } from '@/app/constants/metrics';
+import { ethCatFromStat, ETH_CAT_LABELS } from '@/app/constants/metrics';
 import type { RegionStats } from '@/app/hooks/useDistrictData';
 import { partisanLeanClass, partisanLeanLabel, deviationClass } from '@/app/constants/colors';
 import { RankVotesChart } from './RankVotesChart';
@@ -210,6 +211,7 @@ export function SidePanel(props: SidePanelProps) {
                           <option value="default">Color</option>
                           <option value="partisan">Partisan</option>
                           <option value="population_density">Density</option>
+                          <option value="ethnicity">Ethnicity</option>
                           <option value="white_pct">White %</option>
                           <option value="black_pct">Black %</option>
                           <option value="hispanic_pct">Hispanic %</option>
@@ -253,6 +255,11 @@ export function SidePanel(props: SidePanelProps) {
                         case 'asian_pct': return { label: `${d.asianPct.toFixed(1)}%`, className: '' };
                         case 'native_pct': return { label: `${d.nativePct.toFixed(1)}%`, className: '' };
                         case 'pacific_pct': return { label: `${d.pacificPct.toFixed(1)}%`, className: '' };
+                        case 'ethnicity': {
+                          const cat = ethCatFromStat(d);
+                          const isWhite = cat === 0 || cat === 6 || cat === 12 || cat === 18;
+                          return { label: ETH_CAT_LABELS[cat] ?? '—', className: isWhite ? 'text-muted-foreground' : '' };
+                        }
                         default: return { label: '—', className: 'text-muted-foreground' };
                       }
                     })();

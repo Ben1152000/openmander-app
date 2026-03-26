@@ -14,9 +14,14 @@ export function usePaintHandlers(params: {
   featureHashesRef: MutableRefObject<Record<string, string>>;
   geoIdByIndexRef: MutableRefObject<Record<string, Record<number, string>>>;
   onAssignUnit: (layer: string, geoId: string, district: number) => void;
+  onAssignUnitsBatch: (layer: string, geoIds: string[], district: number) => void;
   automationRunning: boolean;
 }) {
-  const { mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict, assignmentsRef, setDistrictCounts, featureHashesRef, geoIdByIndexRef, onAssignUnit, automationRunning } = params;
+  const {
+    mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict,
+    assignmentsRef, setDistrictCounts, featureHashesRef, geoIdByIndexRef,
+    onAssignUnit, onAssignUnitsBatch, automationRunning,
+  } = params;
 
   const hoveredIdRef = useRef<string | number | null>(null);
   const isPaintingRef = useRef(false);
@@ -36,6 +41,148 @@ export function usePaintHandlers(params: {
         hoveredIdRef.current = null;
       }
     };
+
+    // ── Box select tool ─────────────────────────────────────────────────────────
+    if (drawingTool === 'box' && !automationRunning) {
+      map.getCanvas().style.cursor = 'crosshair';
+
+      // Selection-rect overlay div positioned inside the canvas container.
+      const container = map.getCanvasContainer();
+      const overlay = document.createElement('div');
+      overlay.style.cssText = [
+        'position:absolute', 'pointer-events:none', 'display:none',
+        'border:2px dashed #3b82f6', 'background:rgba(59,130,246,0.08)',
+        'box-sizing:border-box', 'z-index:10',
+      ].join(';');
+      container.appendChild(overlay);
+
+      let startX = 0, startY = 0;
+      let isSelecting = false;
+      // Tracks feature IDs currently highlighted inside the drag box.
+      const boxHighlighted = new Set<string | number>();
+
+      const updateOverlay = (x: number, y: number) => {
+        const left = Math.min(startX, x);
+        const top  = Math.min(startY, y);
+        overlay.style.left   = `${left}px`;
+        overlay.style.top    = `${top}px`;
+        overlay.style.width  = `${Math.abs(x - startX)}px`;
+        overlay.style.height = `${Math.abs(y - startY)}px`;
+      };
+
+      const clearBoxHighlights = () => {
+        for (const id of boxHighlighted) {
+          map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id }, { hover: false });
+        }
+        boxHighlighted.clear();
+      };
+
+      const boxMouseDown = (e: any) => {
+        if (e.originalEvent?.button !== 0) return;
+        e.preventDefault();
+        isSelecting = true;
+        startX = e.point.x;
+        startY = e.point.y;
+        overlay.style.display = 'block';
+        updateOverlay(startX, startY);
+      };
+
+      const boxMouseMove = (e: any) => {
+        if (!isSelecting) return;
+        const x = e.point.x, y = e.point.y;
+        updateOverlay(x, y);
+
+        const x1 = Math.min(startX, x), y1 = Math.min(startY, y);
+        const x2 = Math.max(startX, x), y2 = Math.max(startY, y);
+        const features = map.queryRenderedFeatures([[x1, y1], [x2, y2]], { layers: [fillLayerId] });
+        const inBox = new Set<string | number>(
+          features.map(f => f.id as string | number).filter(id => id != null),
+        );
+        // Clear features that left the box.
+        for (const id of boxHighlighted) {
+          if (!inBox.has(id)) {
+            map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id }, { hover: false });
+            boxHighlighted.delete(id);
+          }
+        }
+        // Highlight features that entered the box.
+        for (const id of inBox) {
+          if (!boxHighlighted.has(id)) {
+            map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id }, { hover: true });
+            boxHighlighted.add(id);
+          }
+        }
+      };
+
+      const boxMouseUp = (e: any) => {
+        if (!isSelecting) return;
+        isSelecting = false;
+        overlay.style.display = 'none';
+        clearBoxHighlights();
+
+        const x = e.point.x, y = e.point.y;
+        const x1 = Math.min(startX, x), y1 = Math.min(startY, y);
+        const x2 = Math.max(startX, x), y2 = Math.max(startY, y);
+
+        // Ignore accidental single clicks (treat as no-op, not a point query).
+        if (x2 - x1 < 4 && y2 - y1 < 4) return;
+
+        const features = map.queryRenderedFeatures([[x1, y1], [x2, y2]], { layers: [fillLayerId] });
+
+        const seenGeoIds = new Set<string>();
+        const geoIds: string[] = [];
+        for (const feature of features) {
+          const index = parseInt(feature.properties?.index);
+          const geoId = geoIdByIndexRef.current[currentLayer]?.[index];
+          if (geoId && !seenGeoIds.has(geoId)) {
+            seenGeoIds.add(geoId);
+            geoIds.push(geoId);
+          }
+        }
+        if (geoIds.length === 0) return;
+
+        // Update frontend assignment cache synchronously so subsequent single-unit
+        // paints have the correct previous-district values for count tracking.
+        const deltas: Record<number, number> = {};
+        for (const geoId of geoIds) {
+          const prev = assignmentsRef.current[geoId];
+          if (prev === activeDistrict) continue; // already assigned here
+          if (prev != null) deltas[prev] = (deltas[prev] ?? 0) - 1;
+          assignmentsRef.current[geoId] = activeDistrict;
+          featureHashesRef.current[geoId] = `${geoId}:${activeDistrict}`;
+          deltas[activeDistrict] = (deltas[activeDistrict] ?? 0) + 1;
+        }
+        if (Object.keys(deltas).length > 0) {
+          setDistrictCounts(c => {
+            const next = { ...c };
+            for (const [d, delta] of Object.entries(deltas)) {
+              const district = Number(d);
+              next[district] = (next[district] ?? 0) + delta;
+              if (next[district] <= 0) delete next[district];
+            }
+            return next;
+          });
+        }
+
+        onAssignUnitsBatch(currentLayer, geoIds, activeDistrict);
+      };
+
+      map.on('mousedown', boxMouseDown);
+      map.on('mousemove', boxMouseMove);
+      map.on('mouseup', boxMouseUp);
+
+      return () => {
+        map.off('mousedown', boxMouseDown);
+        map.off('mousemove', boxMouseMove);
+        map.off('mouseup', boxMouseUp);
+        overlay.remove();
+        clearBoxHighlights();
+        map.getCanvas().style.cursor = '';
+        clearHover();
+      };
+    }
+
+    // ── Paint / erase / pan tools ───────────────────────────────────────────────
 
     const applyPaint = (_featureId: string | number, geoId: string) => {
       if (drawingTool === 'erase') {

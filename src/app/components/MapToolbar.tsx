@@ -1,9 +1,9 @@
-import { Hand, Paintbrush, Eraser, Layers } from 'lucide-react';
+import { Hand, Paintbrush, Eraser, Layers, BoxSelect } from 'lucide-react';
 import type React from 'react';
 import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK } from '@/app/constants/config';
 import type { LayerZoomRanges } from '@/app/hooks/usePackLoader';
 
-export type DrawingTool = 'pan' | 'paint' | 'erase';
+export type DrawingTool = 'pan' | 'paint' | 'erase' | 'box';
 
 const LAYER_OPTIONS: { value: string; label: string; minZoom: number }[] = [
   { value: 'county', label: 'County', minZoom: 0 },
@@ -43,7 +43,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
   });
 
   const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => {
-    const isPaintTool = tool === 'paint' || tool === 'erase';
+    const isPaintTool = tool === 'paint' || tool === 'erase' || tool === 'box';
     const disabled = (isPaintTool && !workerReady) || (tool === 'paint' && activeDistrict === 0);
     return (
       <button
@@ -71,6 +71,16 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
         {toolButton('pan', <Hand className="w-5 h-5" />, 'Pan')}
         {toolButton('paint', <Paintbrush className="w-5 h-5" />, 'Paint districts')}
         {toolButton('erase', <Eraser className="w-5 h-5" />, 'Erase assignments')}
+        {toolButton('box', (
+          <div className="relative">
+            <BoxSelect className="w-5 h-5" />
+            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-px shadow-sm">
+              {activeDistrict === 0
+                ? <Eraser className="w-3.5 h-3.5 text-gray-500" />
+                : <Paintbrush className="w-3.5 h-3.5 text-gray-500" />}
+            </div>
+          </div>
+        ), 'Box select')}
       </div>
 
       {/* Right controls */}
@@ -113,6 +123,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
             <option value="default">Color</option>
             <option value="partisan">Partisan</option>
             <option value="population_density">Density</option>
+            <option value="ethnicity">Ethnicity</option>
             <option value="white_pct">White %</option>
             <option value="black_pct">Black %</option>
             <option value="hispanic_pct">Hispanic %</option>

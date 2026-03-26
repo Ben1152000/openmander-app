@@ -4,12 +4,12 @@ import type { MutableRefObject } from 'react';
 import {
   rampColor,
   partisanStepColor, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, UNIT_GRAY_FILL,
-  hexToRgb,
+  hexToRgb, ETH_COLORS,
 } from '@/app/constants/colors';
-import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS } from '@/app/constants/metrics';
-import type { DistrictStat, EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
+import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, ethCatFromStat } from '@/app/constants/metrics';
+import type { DistrictStat, EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
 
-type ColorMetric = 'default' | 'partisan' | ScalarMetric | EthnicityMetric;
+type ColorMetric = 'default' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
 const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
 
 // Fixed fill-color expression for district polygons — never changes, so MapLibre
@@ -154,6 +154,9 @@ export function useVisualizationPaint(params: {
           const metric = districtColorMetric as ScalarMetric;
           hex = rampColor(Math.log1p(stat[SCALAR_STAT_KEYS[metric]] as number), SCALAR_COLOR_RAMPS[metric]);
         } else hex = '#888888';
+      } else if (districtColorMetric === 'ethnicity') {
+        const stat = statsMap.get(district);
+        hex = stat ? ETH_COLORS[ethCatFromStat(stat)] : '#888888';
       } else {
         hex = feature.properties!.color as string;
       }

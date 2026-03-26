@@ -128,6 +128,12 @@ export class WorkerPlan {
     return this.call('stats', { type: 'assign-unit', layer, geoId, district });
   }
 
+  /// Assign all blocks belonging to multiple geographic units to a district in one worker call.
+  /// More efficient than calling assignUnit repeatedly: geometry/stats recompute only once.
+  assignUnitsBatch(layer: string, geoIds: string[], district: number): Promise<void> {
+    return this.call('stats', { type: 'assign-units-batch', layer, geoIds, district });
+  }
+
   setAssignments(data: Uint32Array): Promise<void> {
     return this.call('stats', { type: 'set-assignments', data }, [data.buffer]);
   }

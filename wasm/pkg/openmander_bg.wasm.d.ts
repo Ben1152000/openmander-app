@@ -5,6 +5,7 @@ export const __wbg_wasmplan_free: (a: number, b: number) => void;
 export const wasmplan_all_part_totals: (a: number, b: number, c: number) => [number, number, number];
 export const wasmplan_anneal_balance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
 export const wasmplan_assign_unit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const wasmplan_assign_units_batch: (a: number, b: number, c: number, d: any, e: number) => [number, number];
 export const wasmplan_assignments_dict: (a: number) => [number, number, number];
 export const wasmplan_assignments_u32: (a: number) => [number, number, number];
 export const wasmplan_district_geometries_wkb: (a: number) => [number, number, number];

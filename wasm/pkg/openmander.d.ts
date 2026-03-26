@@ -75,6 +75,12 @@ export class WasmPlan {
    */
   assignments_dict(): any;
   /**
+   * Assign all blocks belonging to multiple geographic units to a district in one pass.
+   * `geo_ids`: JS array of FIPS strings. Processes all units before returning, so only
+   * one geometry/stats recomputation is needed instead of one per unit.
+   */
+  assign_units_batch(layer: string, geo_ids: Array<any>, district: number): void;
+  /**
    * Set assignments from a Uint32Array (index-based).
    */
   set_assignments_u32(arr: Uint32Array): void;
@@ -109,6 +115,7 @@ export interface InitOutput {
   readonly wasmplan_all_part_totals: (a: number, b: number, c: number) => [number, number, number];
   readonly wasmplan_anneal_balance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
   readonly wasmplan_assign_unit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+  readonly wasmplan_assign_units_batch: (a: number, b: number, c: number, d: any, e: number) => [number, number];
   readonly wasmplan_assignments_dict: (a: number) => [number, number, number];
   readonly wasmplan_assignments_u32: (a: number) => [number, number, number];
   readonly wasmplan_district_geometries_wkb: (a: number) => [number, number, number];

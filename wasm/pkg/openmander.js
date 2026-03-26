@@ -498,6 +498,22 @@ export class WasmPlan {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * Assign all blocks belonging to multiple geographic units to a district in one pass.
+     * `geo_ids`: JS array of FIPS strings. Processes all units before returning, so only
+     * one geometry/stats recomputation is needed instead of one per unit.
+     * @param {string} layer
+     * @param {Array<any>} geo_ids
+     * @param {number} district
+     */
+    assign_units_batch(layer, geo_ids, district) {
+        const ptr0 = passStringToWasm0(layer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmplan_assign_units_batch(this.__wbg_ptr, ptr0, len0, geo_ids, district);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * Set assignments from a Uint32Array (index-based).
      * @param {Uint32Array} arr
      */

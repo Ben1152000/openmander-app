@@ -20,11 +20,18 @@ import type { Map as MaplibreMap } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
 import {
   PARTISAN_UNIT_RAMP, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS,
+  ETH_COLOR_EXPR,
 } from '@/app/constants/colors';
-import { ETHNICITY_METRICS, SCALAR_METRICS } from '@/app/constants/metrics';
-import type { EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
+import { ETHNICITY_METRICS, SCALAR_METRICS, NON_WHITE_GROUPS, ethCatFromPcts } from '@/app/constants/metrics';
+import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
 
-type ColorMetric = 'partisan' | ScalarMetric | EthnicityMetric;
+type ColorMetric = 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
+
+function ethCatFor(geoId: string, ed: Partial<Record<EthnicityMetric, Record<string, number>>>): number {
+  const white = ed['white_pct']?.[geoId] ?? -1;
+  const nwPcts = NON_WHITE_GROUPS.map(({ key }) => ed[key]?.[geoId] ?? -1);
+  return ethCatFromPcts(white, nwPcts);
+}
 
 const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
 
@@ -110,6 +117,9 @@ export function useMetricFeatureState(params: {
           ['interpolate', ['linear'], ['feature-state', metricStateKey], ...stops.flat()]],
         stops[0][1],
       ];
+    } else if (districtColorMetric === 'ethnicity') {
+      metricStateKey = 'eth_cat';
+      metricExpr = ETH_COLOR_EXPR;
     } else {
       const metric = districtColorMetric as ScalarMetric;
       metricStateKey = `scalar_${metric}`;
@@ -162,6 +172,8 @@ export function useMetricFeatureState(params: {
           } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
             const v = ethnicityDataRef.current[districtColorMetric as EthnicityMetric]?.[geoId];
             if (v !== undefined) stateUpdate[metricStateKey] = v;
+          } else if (districtColorMetric === 'ethnicity') {
+            stateUpdate[metricStateKey] = ethCatFor(geoId, ethnicityDataRef.current);
           } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
             const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
             if (v !== undefined) stateUpdate[metricStateKey] = v;
@@ -222,6 +234,8 @@ export function useMetricFeatureState(params: {
         } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
           const v = ethnicityDataRef.current[districtColorMetric as EthnicityMetric]?.[geoId];
           if (v !== undefined) stateUpdate[metricStateKey] = v;
+        } else if (districtColorMetric === 'ethnicity') {
+          stateUpdate[metricStateKey] = ethCatFor(geoId, ethnicityDataRef.current);
         } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
           const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
           if (v !== undefined) stateUpdate[metricStateKey] = v;

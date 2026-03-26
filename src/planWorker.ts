@@ -156,6 +156,7 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'equalize'; series: string; tolerance: number; maxIter: number; chunkSize?: number }
     | { type: 'compute-geometries' }
     | { type: 'assign-unit'; layer: string; geoId: string; district: number }
+    | { type: 'assign-units-batch'; layer: string; geoIds: string[]; district: number }
     | { type: 'set-assignments'; data: Uint32Array };
 
   try {
@@ -235,6 +236,16 @@ self.onmessage = async (e: MessageEvent) => {
       // trigger assignmentsRef / districtCounts recalculation on the main thread.
       const unitAssignments = new Uint32Array(wasmPlan.assignments_u32());
       (self as any).postMessage({ type: 'assignments', data: unitAssignments, done: false }, [unitAssignments.buffer]);
+      sendGeometries();
+      sendStats();
+
+    } else if (msg.type === 'assign-units-batch') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+      // Single Rust call processes all geo_ids in one block-table pass; geometry/stats
+      // are recomputed once at the end instead of once per unit.
+      (wasmPlan as any).assign_units_batch(msg.layer, msg.geoIds, msg.district);
+      const batchAssignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: batchAssignments, done: true }, [batchAssignments.buffer]);
       sendGeometries();
       sendStats();
     }

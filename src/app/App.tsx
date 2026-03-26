@@ -10,7 +10,7 @@ import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
   ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK,
 } from './constants/config';
-import type { EthnicityMetric, ScalarMetric } from './constants/metrics';
+import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from './constants/metrics';
 import { useSidebarResize } from './hooks/useSidebarResize';
 import { usePackLoader } from './hooks/usePackLoader';
 import { useMapMetrics } from './hooks/useMapMetrics';
@@ -120,7 +120,7 @@ export default function App() {
   const visualizationModeRef = useRef<'districts' | 'map'>('districts');
 
   // District table color metric
-  const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric>('default');
+  const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric>('default');
   const districtColorMetricRef = useRef<string>('default');
   districtColorMetricRef.current = districtColorMetric;
 
@@ -203,6 +203,7 @@ export default function App() {
     mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict, assignmentsRef, setDistrictCounts, featureHashesRef,
     geoIdByIndexRef, automationRunning,
     onAssignUnit: (layer, geoId, district) => { planRef.current?.assignUnit(layer, geoId, district); },
+    onAssignUnitsBatch: (layer, geoIds, district) => { planRef.current?.assignUnitsBatch(layer, geoIds, district); },
   });
 
   // Visualization paint (district overlay + base layer coloring)

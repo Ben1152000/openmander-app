@@ -181,3 +181,25 @@ export function rampColor(t: number, stops: [number, string][]): string {
   }
   return stops[stops.length - 1][1];
 }
+
+// --- Ethnicity colors ---
+//
+// eth_cat codes — grouped by tier, same group order (Black/Hispanic/Asian/Native/Pacific/White) in each:
+//   0     zero population
+//   1–6   dominant  ≥75%                   lerp(75%→100%, t=0.40) ≈ global 85% of each group's ramp
+//   7–12  majority  50–75%                 lerp(50%→75%,  t=0.40) ≈ global 60%
+//   13–18 plurality <50% (or white plu.)   lerp(25%→50%,  t=0.32) ≈ global 33%
+//         (white plurality: no NW group is largest but combined NW ≥50%)
+export const ETH_COLORS: Record<number, string> = {
+  0:  '#D8D8D8', // zero pop
+  1:  '#42007A', 2:  '#871600', 3:  '#004630', 4:  '#603500', 5:  '#6D0A02', 6:  '#002D7A', // dom: Blk Hisp Asian Nat Pac Wht
+  7:  '#7E13C6', 8:  '#DF5000', 9:  '#00955D', 10: '#BA7D00', 11: '#CA2D13', 12: '#1370D0', // maj: Blk Hisp Asian Nat Pac Wht
+  13: '#CC92F5', 14: '#FFBC6D', 15: '#78DEB7', 16: '#F5D157', 17: '#FA9777', 18: '#8DC4FA', // plu: Blk Hisp Asian Nat Pac Wht
+};
+
+// Generated from ETH_COLORS — no need to maintain separately.
+export const ETH_COLOR_EXPR: any[] = [
+  'match', ['feature-state', 'eth_cat'],
+  ...Object.entries(ETH_COLORS).flatMap(([k, v]) => [Number(k), v]),
+  '#D8D8D8',
+];
