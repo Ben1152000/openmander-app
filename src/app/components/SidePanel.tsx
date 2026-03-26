@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Upload, Download } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Upload, Download, Link } from 'lucide-react';
 import openmanderIcon from '/openmander-icon.svg';
 import { CustomSelect } from './CustomSelect';
 
@@ -97,6 +98,8 @@ export function SidePanel(props: SidePanelProps) {
     onImportPlan,
   } = props;
 
+  const [showUrlDialog, setShowUrlDialog] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
   const [pendingState, setPendingState] = useState('illinois');
   const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_CONFIGS['illinois']?.districts ?? numDistricts));
   const [deviationMode, setDeviationMode] = useState<'percent' | 'absolute'>('percent');
@@ -212,6 +215,7 @@ export function SidePanel(props: SidePanelProps) {
                             { value: 'default',            label: 'Color'      },
                             { value: 'partisan',           label: 'Partisan'   },
                             { value: 'population_density', label: 'Density'    },
+                            { value: 'turnout',            label: 'Turnout'    },
                             { value: 'ethnicity',          label: 'Ethnicity'  },
                             { value: 'white_pct',          label: 'White\u00a0%'    },
                             { value: 'black_pct',          label: 'Black\u00a0%'    },
@@ -252,6 +256,7 @@ export function SidePanel(props: SidePanelProps) {
                         case 'default': return { label: '—', className: 'text-muted-foreground' };
                         case 'partisan': return { label: leanLabel, className: leanClass };
                         case 'population_density': return { label: `${Math.round(d.populationDensity).toLocaleString()}/km²`, className: '' };
+                        case 'turnout': return { label: d.turnout > 0 ? `${(d.turnout * 100).toFixed(1)}%` : '—', className: '' };
                         case 'white_pct': return { label: `${d.whitePct.toFixed(1)}%`, className: '' };
                         case 'black_pct': return { label: `${d.blackPct.toFixed(1)}%`, className: '' };
                         case 'hispanic_pct': return { label: `${d.hispanicPct.toFixed(1)}%`, className: '' };
@@ -412,12 +417,39 @@ export function SidePanel(props: SidePanelProps) {
                   input.onchange = () => { if (input.files?.[0]) onImportPlan(input.files[0]); };
                   input.click();
                 }}>
-                  <Download className="w-4 h-4 mr-2" /> Import Plan
+                  <Download className="w-4 h-4 mr-2" /> Import
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={onExportPlan} disabled={!workerReady}>
-                  <Upload className="w-4 h-4 mr-2" /> Export Plan
+                  <Upload className="w-4 h-4 mr-2" /> Export
+                </Button>
+                <Button variant="outline" className="flex-1" disabled={!workerReady} onClick={() => { setUrlInput(''); setShowUrlDialog(true); }}>
+                  <Link className="w-4 h-4 mr-2" /> From URL
                 </Button>
               </div>
+
+              {showUrlDialog && createPortal(
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowUrlDialog(false)}>
+                  <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+                    <div>
+                      <h2 className="text-base font-semibold">Load Map from URL</h2>
+                      <p className="text-sm text-muted-foreground mt-1">Paste a link from Dave's Redistricting or Districtr.</p>
+                    </div>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      value={urlInput}
+                      onChange={e => setUrlInput(e.target.value)}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20"
+                      autoFocus
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="outline" onClick={() => setShowUrlDialog(false)}>Cancel</Button>
+                      <Button disabled={!urlInput.trim()}>Load</Button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
 
               {regionStats && (() => {
                 const Stat = ({ label, value }: { label: string; value: string }) => (

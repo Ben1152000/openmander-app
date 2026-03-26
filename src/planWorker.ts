@@ -116,6 +116,10 @@ function sendStats() {
     ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Rep') as any) as number[] : null;
   const landM2: number[] | null = available.includes('land_m2')
     ? Array.from((wasmPlan as any).district_totals('land_m2') as any) as number[] : null;
+  const presTotal: number[] | null = available.includes('E_20_PRES_Total')
+    ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Total') as any) as number[] : null;
+  const vap20: number[] | null = available.includes('V_20_VAP_Total')
+    ? Array.from((wasmPlan as any).district_totals('V_20_VAP_Total') as any) as number[] : null;
 
   const ethnicGroups = ['White', 'Black', 'Hispanic', 'Asian', 'Native', 'Pacific'] as const;
   const ethnicTotals: Record<string, number[] | null> = {};
@@ -137,6 +141,9 @@ function sendStats() {
       repVotes: repVotes?.[i] ?? 0,
       areaSqKm: landM2 ? landM2[i] / 1e6 : 0,
       populationDensity: landM2 && landM2[i] > 0 ? pop / (landM2[i] / 1e6) : 0,
+      turnout: vap20 && vap20[i] > 0
+        ? (presTotal ? presTotal[i] : ((demVotes?.[i] ?? 0) + (repVotes?.[i] ?? 0))) / vap20[i]
+        : 0,
       whitePct:    pct(ethnicTotals['White']),
       blackPct:    pct(ethnicTotals['Black']),
       hispanicPct: pct(ethnicTotals['Hispanic']),

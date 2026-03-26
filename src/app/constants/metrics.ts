@@ -9,6 +9,7 @@ export interface DistrictStat {
   repVotes: number;
   areaSqKm: number;
   populationDensity: number; // people per km²
+  turnout: number;           // fraction 0–1: total pres votes / VAP
   whitePct: number;
   blackPct: number;
   hispanicPct: number;
@@ -17,11 +18,19 @@ export interface DistrictStat {
   pacificPct: number;
 }
 
-export type ScalarMetric = 'population_density';
-export const SCALAR_METRICS: ScalarMetric[] = ['population_density'];
+export type ScalarMetric = 'population_density' | 'turnout';
+export const SCALAR_METRICS: ScalarMetric[] = ['population_density', 'turnout'];
 
 export const SCALAR_STAT_KEYS: Record<ScalarMetric, keyof DistrictStat> = {
   population_density: 'populationDensity',
+  turnout: 'turnout',
+};
+
+// Value transform applied before color ramp lookup. population_density uses log
+// scale to compress its wide dynamic range; turnout is already a clean 0–1 fraction.
+export const SCALAR_TRANSFORMS: Record<ScalarMetric, (v: number) => number> = {
+  population_density: Math.log1p,
+  turnout: (v: number) => v,
 };
 
 export const ETHNICITY_METRICS = [

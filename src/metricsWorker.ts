@@ -6,7 +6,7 @@
 // Messages out:
 //   { type: 'metrics', partisanLean, geoIdByIndex, scalarData, ethnicityData }
 
-import { ETHNICITY_METRICS, ETHNICITY_COLS, SCALAR_METRICS } from './app/constants/metrics';
+import { ETHNICITY_METRICS, ETHNICITY_COLS, SCALAR_METRICS, SCALAR_TRANSFORMS } from './app/constants/metrics';
 import type { EthnicityMetric, ScalarMetric } from './app/constants/metrics';
 
 /** Parse a single CSV line, respecting RFC 4180 double-quote escaping. */
@@ -60,6 +60,7 @@ self.onmessage = (e: MessageEvent) => {
 
     const demIdx = col('E_20_PRES_Dem'), repIdx = col('E_20_PRES_Rep');
     const censTotalIdx = col('T_20_CENS_Total'), landM2Idx = col('land_m2');
+    const presTotalIdx = col('E_20_PRES_Total'), vap20Idx = col('V_20_VAP_Total');
     const ethnicColIdxs = Object.fromEntries(
       ETHNICITY_METRICS.map(m => [m, col(ETHNICITY_COLS[m])])
     ) as Record<EthnicityMetric, number>;
@@ -111,7 +112,13 @@ self.onmessage = (e: MessageEvent) => {
       if (censTotalIdx !== -1) {
         const pop = parseFloat(cols[censTotalIdx]) || 0;
         const land = landM2Idx !== -1 ? (parseFloat(cols[landM2Idx]) || 0) : 0;
-        scalarData['population_density']![geoId] = pop > 0 && land > 0 ? Math.log1p(pop / (land / 1e6)) : -1;
+        scalarData['population_density']![geoId] = pop > 0 && land > 0
+          ? SCALAR_TRANSFORMS['population_density'](pop / (land / 1e6)) : -1;
+        const vap = vap20Idx !== -1 ? (parseFloat(cols[vap20Idx]) || 0) : 0;
+        const votes = presTotalIdx !== -1
+          ? (parseFloat(cols[presTotalIdx]) || 0)
+          : ((parseFloat(cols[demIdx]) || 0) + (parseFloat(cols[repIdx]) || 0));
+        scalarData['turnout']![geoId] = vap > 0 ? votes / vap : -1;
         for (const m of ETHNICITY_METRICS) {
           const ci = ethnicColIdxs[m];
           if (ci !== -1) ethnicityData[m]![geoId] = pop > 0 ? (parseFloat(cols[ci]) || 0) / pop : -1;

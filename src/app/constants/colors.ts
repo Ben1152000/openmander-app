@@ -103,6 +103,18 @@ export function partisanStepColor(lean: number): string {
   return PARTISAN_STEPS[0][1];
 }
 
+// --- Turnout ramp (input = raw fraction 0–1, no transform) ---
+// Warm gold → teal pivot at 50% → cool blue. Steps concentrated in the 30–70% typical range.
+export const TURNOUT_COLOR_RAMP: [number, string][] = [
+  [0.00, '#f7eebc'],
+  [0.20, '#e8c040'],
+  [0.35, '#b0c050'],
+  [0.50, '#38aa88'],
+  [0.65, '#1e72c0'],
+  [0.80, '#0f44a0'],
+  [1.00, '#06184a'],
+];
+
 // --- Density ramp (input = Math.log1p(people_per_km²), fixed absolute thresholds) ---
 // Light green → teal → blue → dark blue → purple → dark red → bright red → orange.
 export const DENSITY_COLOR_RAMP: [number, string][] = [
@@ -168,6 +180,7 @@ function lerpColor(t: number, a: string, b: string): string {
 
 export const SCALAR_COLOR_RAMPS: Record<ScalarMetric, [number, string][]> = {
   population_density: DENSITY_COLOR_RAMP,
+  turnout: TURNOUT_COLOR_RAMP,
 };
 
 export function rampColor(t: number, stops: [number, string][]): string {

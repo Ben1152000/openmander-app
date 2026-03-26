@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import maplibregl, { Map } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import { Map as MapIcon, LayoutList } from 'lucide-react';
@@ -106,6 +107,7 @@ export default function App() {
   // Called by useMetricFeatureState; invoke after any assignment change for immediate color update.
   const metricStateUpdateRef = useRef<(() => void) | null>(null);
   const featureHashesRef = useRef<Record<string, string>>({});
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
   const [prevDistrict, setPrevDistrict] = useState<number>(0);
@@ -396,8 +398,12 @@ export default function App() {
   };
 
   const handleExportPlan = () => {
+    const blockAssignments = blockAssignmentsRef.current;
+    const blockMap = geoIdByIndexRef.current['block'];
+    if (!blockAssignments || !blockMap) return;
     const rows = ['GEOID20,District'];
-    for (const [geoId, district] of Object.entries(assignmentsRef.current)) {
+    for (const [idxStr, geoId] of Object.entries(blockMap)) {
+      const district = blockAssignments[parseInt(idxStr)];
       if (district > 0) rows.push(`${geoId},${district}`);
     }
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
@@ -411,7 +417,7 @@ export default function App() {
 
   const handleImportPlan = (file: File) => {
     const blockMap = geoIdByIndexRef.current['block'];
-    if (!blockMap) { window.alert('Error: Map data not loaded yet.'); return; }
+    if (!blockMap) { setAlertMessage('Error: Map data not loaded yet.'); return; }
     const geoIdToIndex: Record<string, number> = {};
     for (const [idx, geoId] of Object.entries(blockMap)) geoIdToIndex[geoId] = parseInt(idx);
     const size = Object.keys(blockMap).length;
@@ -424,7 +430,7 @@ export default function App() {
       const geoCol = headers.findIndex(h => h === 'geoid20' || h === 'geo_id');
       const distCol = headers.findIndex(h => h === 'district');
       if (geoCol === -1 || distCol === -1) {
-        window.alert('Error: CSV must have a GEOID20 (or geo_id) column and a District column.');
+        setAlertMessage('Error: CSV must have a GEOID20 (or geo_id) column and a District column.');
         return;
       }
       let matched = 0, unmatched = 0;
@@ -443,12 +449,12 @@ export default function App() {
         }
       }
       if (matched === 0) {
-        window.alert(`Error: No blocks matched the loaded state. Make sure the CSV is for ${loadedState}.`);
+        setAlertMessage(`Error: No blocks matched the loaded state. Make sure the CSV is for ${loadedState}.`);
         return;
       }
       const maxDistrict = Object.values(newAssignments).reduce((m, v) => v > m ? v : m, 0);
       if (maxDistrict > numDistricts) {
-        window.alert(`Error: CSV contains district ${maxDistrict} but the current plan only has ${numDistricts} district${numDistricts === 1 ? '' : 's'}. Recreate the map with the correct number of districts and try again.`);
+        setAlertMessage(`Error: CSV contains district ${maxDistrict} but the current plan only has ${numDistricts} district${numDistricts === 1 ? '' : 's'}. Recreate the map with the correct number of districts and try again.`);
         return;
       }
       assignmentsRef.current = newAssignments;
@@ -460,9 +466,9 @@ export default function App() {
       planRef.current?.setAssignments(arr);
       setVisualizationMode('districts');
       if (unmatched > 0) {
-        window.alert(`Imported ${matched.toLocaleString()} blocks. Warning: ${unmatched.toLocaleString()} rows did not match any block in the loaded state.`);
+        setAlertMessage(`Imported ${matched.toLocaleString()} blocks. Warning: ${unmatched.toLocaleString()} rows did not match any block in the loaded state.`);
       } else {
-        window.alert(`Successfully imported ${matched.toLocaleString()} block assignments.`);
+        setAlertMessage(`Successfully imported ${matched.toLocaleString()} block assignments.`);
       }
     });
   };
@@ -576,6 +582,7 @@ export default function App() {
   );
 
   return (
+    <>
     <div className="h-screen w-screen overflow-hidden flex flex-col">
       {/* Main content row (desktop) / stack (mobile) */}
       <div className="flex-1 flex overflow-hidden" style={{ flexDirection: isMobile ? 'column' : 'row' }}>
@@ -620,5 +627,24 @@ export default function App() {
         </button>
       </div>
     </div>
+
+    {alertMessage !== null && createPortal(
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAlertMessage(null)}>
+        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+          <p className="text-sm">{alertMessage}</p>
+          <div className="flex justify-end">
+            <button
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+              onClick={() => setAlertMessage(null)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }

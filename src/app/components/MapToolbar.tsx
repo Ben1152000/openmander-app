@@ -124,6 +124,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
               { value: 'default',            label: 'Color'      },
               { value: 'partisan',           label: 'Partisan'   },
               { value: 'population_density', label: 'Density'    },
+              { value: 'turnout',            label: 'Turnout'    },
               { value: 'ethnicity',          label: 'Ethnicity'  },
               { value: 'white_pct',          label: 'White\u00a0%' },
               { value: 'black_pct',          label: 'Black\u00a0%'    },
