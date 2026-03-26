@@ -1,5 +1,6 @@
-import { Hand, Paintbrush, Eraser, Layers, BoxSelect } from 'lucide-react';
+import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect } from 'lucide-react';
 import type React from 'react';
+import { CustomSelect } from './CustomSelect';
 import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK } from '@/app/constants/config';
 import type { LayerZoomRanges } from '@/app/hooks/usePackLoader';
 
@@ -26,10 +27,11 @@ interface MapToolbarProps {
   visible: boolean;
   workerReady: boolean;
   activeDistrict: number;
+  prevDistrict: number;
 }
 
 
-export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, visible, workerReady, activeDistrict }: MapToolbarProps) {
+export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, visible, workerReady, activeDistrict, prevDistrict }: MapToolbarProps) {
   if (!visible) return null;
 
   const hasRanges = Object.keys(layerZoomRanges).length > 0;
@@ -44,11 +46,11 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
 
   const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => {
     const isPaintTool = tool === 'paint' || tool === 'erase' || tool === 'box';
-    const disabled = (isPaintTool && !workerReady) || (tool === 'paint' && activeDistrict === 0);
+    const disabled = (isPaintTool && !workerReady) || (tool === 'paint' && activeDistrict === 0 && prevDistrict === 0);
     return (
       <button
         key={tool}
-        title={disabled ? 'Initializing redistricting engine...' : title}
+        title={title}
         disabled={disabled}
         onClick={() => onDrawingToolChange(tool)}
         className={`p-2.5 rounded-lg transition-colors ${
@@ -69,8 +71,8 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
       {/* Drawing Tools */}
       <div className="flex items-center gap-1 bg-white rounded-lg shadow-lg p-1 pointer-events-auto">
         {toolButton('pan', <Hand className="w-5 h-5" />, 'Pan')}
-        {toolButton('paint', <Paintbrush className="w-5 h-5" />, 'Paint districts')}
-        {toolButton('erase', <Eraser className="w-5 h-5" />, 'Erase assignments')}
+        {toolButton('paint', <Paintbrush className="w-5 h-5" />, 'Paint')}
+        {toolButton('erase', <Eraser className="w-5 h-5" />, 'Erase')}
         {toolButton('box', (
           <div className="relative">
             <BoxSelect className="w-5 h-5" />
@@ -83,54 +85,54 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
         ), 'Box select')}
       </div>
 
-      {/* Right controls */}
-      <div className="flex items-center gap-3 pointer-events-auto">
-        {/* Visualization Mode Button */}
+      {/* Right controls — single card with dividers */}
+      <div className="flex items-stretch bg-white rounded-lg shadow-lg pointer-events-auto divide-x divide-gray-200 px-1 py-1">
+        {/* Visualization mode toggle */}
         <button
-          className="flex items-center gap-2 bg-white rounded-lg shadow-lg px-3 py-2 cursor-pointer select-none text-gray-700 hover:bg-gray-50 transition-colors"
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-l-lg transition-colors cursor-pointer select-none ${
+            visualizationMode === 'districts' ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-100'
+          }`}
           onClick={() => onVisualizationModeChange(visualizationMode === 'districts' ? 'map' : 'districts')}
-          title={visualizationMode === 'districts' ? 'Switch to map view' : 'Switch to district view'}
+          title={visualizationMode === 'districts' ? 'Hide districts' : 'Show districts'}
         >
-          <Layers className="w-4 h-4 text-gray-500" />
-          <span className="text-sm font-medium">
-            {visualizationMode === 'districts' ? 'District View' : 'Map View'}
-          </span>
+          {visualizationMode === 'districts'
+            ? <Eye className="w-4 h-4" />
+            : <EyeOff className="w-4 h-4" />}
+          <span className="text-sm font-medium">Districts</span>
         </button>
 
         {/* Layer selector */}
-        <div className="flex items-center bg-white rounded-lg shadow-lg px-3">
-          <select
+        <div className="relative flex items-center px-3">
+          <CustomSelect
+            prefix={<Layers className="w-4 h-4 text-gray-700 shrink-0" />}
             value={layerOverride ?? 'auto'}
-            onChange={e => onLayerOverrideChange(e.target.value === 'auto' ? null : e.target.value)}
-            className="text-sm font-medium text-gray-700 bg-transparent cursor-pointer outline-none py-[9.5px]"
-          >
-            <option value="auto">
-              Auto ({LAYER_OPTIONS.findLast(o => currentZoom >= o.minZoom)?.label ?? 'County'})
-            </option>
-            {availableOptions.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+            onChange={v => onLayerOverrideChange(v === 'auto' ? null : v)}
+            options={[
+              { value: 'auto', label: `Auto (${LAYER_OPTIONS.findLast(o => currentZoom >= o.minZoom)?.label ?? 'County'})`, buttonLabel: 'Auto' },
+              ...availableOptions,
+            ]}
+          />
         </div>
 
         {/* Metric dropdown */}
-        <div className="flex items-center bg-white rounded-lg shadow-lg px-3">
-          <select
+        <div className="relative flex items-center px-3">
+          <CustomSelect
+            prefix={<Palette className="w-4 h-4 text-gray-700 shrink-0" />}
             value={districtColorMetric}
-            onChange={e => onDistrictColorMetricChange(e.target.value)}
-            className="text-sm font-medium text-gray-700 bg-transparent cursor-pointer outline-none py-[9.5px]"
-          >
-            <option value="default">Color</option>
-            <option value="partisan">Partisan</option>
-            <option value="population_density">Density</option>
-            <option value="ethnicity">Ethnicity</option>
-            <option value="white_pct">White %</option>
-            <option value="black_pct">Black %</option>
-            <option value="hispanic_pct">Hispanic %</option>
-            <option value="asian_pct">Asian %</option>
-            <option value="native_pct">Native %</option>
-            <option value="pacific_pct">Pacific %</option>
-          </select>
+            onChange={onDistrictColorMetricChange}
+            options={[
+              { value: 'default',            label: 'Color'      },
+              { value: 'partisan',           label: 'Partisan'   },
+              { value: 'population_density', label: 'Density'    },
+              { value: 'ethnicity',          label: 'Ethnicity'  },
+              { value: 'white_pct',          label: 'White\u00a0%' },
+              { value: 'black_pct',          label: 'Black\u00a0%'    },
+              { value: 'hispanic_pct',       label: 'Hispanic\u00a0%' },
+              { value: 'asian_pct',          label: 'Asian\u00a0%'    },
+              { value: 'native_pct',         label: 'Native\u00a0%'   },
+              { value: 'pacific_pct',        label: 'Pacific\u00a0%'  },
+            ]}
+          />
         </div>
       </div>
     </div>

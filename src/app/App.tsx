@@ -108,11 +108,23 @@ export default function App() {
   const featureHashesRef = useRef<Record<string, string>>({});
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
+  const [prevDistrict, setPrevDistrict] = useState<number>(0);
 
   useEffect(() => {
     if (activeDistrict === 0 && drawingTool === 'paint') setDrawingTool('erase');
     if (activeDistrict !== 0 && drawingTool === 'erase') setDrawingTool('paint');
   }, [activeDistrict]);
+
+  const handleDrawingToolChange = (tool: DrawingTool) => {
+    if (tool === 'erase' && activeDistrict !== 0) {
+      setPrevDistrict(activeDistrict);
+      setActiveDistrict(0);
+    } else if (tool === 'paint' && activeDistrict === 0 && prevDistrict !== 0) {
+      setActiveDistrict(prevDistrict);
+      setPrevDistrict(0);
+    }
+    setDrawingTool(tool);
+  };
   const [, setDistrictCounts] = useState<Record<number, number>>({});
 
   // Visualization mode
@@ -507,7 +519,7 @@ export default function App() {
       if (config && mapRef.current) mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40 });
     },
     activeDistrict,
-    onActiveDistrictChange: setActiveDistrict,
+    onActiveDistrictChange: (n: number) => { setActiveDistrict(n); if (n !== 0) setPrevDistrict(0); },
     paintMode: drawingTool === 'paint',
     onPaintModeChange: (enabled: boolean) => setDrawingTool(enabled ? 'paint' : 'pan'),
     visualizationMode,
@@ -546,7 +558,8 @@ export default function App() {
     >
       <MapToolbar
         drawingTool={drawingTool}
-        onDrawingToolChange={setDrawingTool}
+        onDrawingToolChange={handleDrawingToolChange}
+        prevDistrict={prevDistrict}
         visualizationMode={visualizationMode}
         onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
         districtColorMetric={districtColorMetric}

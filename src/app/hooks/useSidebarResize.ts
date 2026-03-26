@@ -8,7 +8,7 @@ export function useSidebarResize(initial = 400) {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing.current) return;
       const w = e.clientX;
-      if (w >= 300 && w <= 600) setSidebarWidth(w);
+      if (w >= 376 && w <= 600) setSidebarWidth(w);
     };
     const handleMouseUp = () => {
       isResizing.current = false;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Upload, Download } from 'lucide-react';
 import openmanderIcon from '/openmander-icon.svg';
+import { CustomSelect } from './CustomSelect';
 
 import { STATE_CONFIGS } from '@/app/constants/config';
 import { Label } from './ui/label';
@@ -193,32 +194,34 @@ export function SidePanel(props: SidePanelProps) {
                     <th className="text-left py-2 pl-6 pr-3 font-medium w-1/5">District</th>
                     <th className="text-right py-2 px-3 font-medium w-1/4">Population</th>
                     <th className="text-right py-1 px-3 font-medium w-1/4">
-                      <select
-                          value={deviationMode}
-                          onChange={e => setDeviationMode(e.target.value as 'percent' | 'absolute')}
-                          className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
-                        >
-                          <option value="percent">Deviation %</option>
-                          <option value="absolute">Deviation #</option>
-                        </select>
+                      <button
+                        className="text-sm font-medium cursor-pointer hover:text-blue-600 transition-colors"
+                        onClick={() => setDeviationMode(m => m === 'percent' ? 'absolute' : 'percent')}
+                        title="Toggle deviation mode"
+                      >
+                        {deviationMode === 'percent' ? 'Deviation\u00a0%' : 'Deviation\u00a0#'}
+                      </button>
                     </th>
-                    <th className="text-right py-1 pl-3 pr-6 font-medium w-1/4">
-                      <select
+                    <th className="relative text-right py-1 pl-3 pr-6 font-medium w-1/4">
+                      <div className="flex justify-end">
+                        <CustomSelect
                           value={districtColorMetric}
-                          onChange={e => onDistrictColorMetricChange(e.target.value as typeof districtColorMetric)}
-                          className="bg-transparent text-sm font-medium cursor-pointer outline-none text-right w-full"
-                        >
-                          <option value="default">Color</option>
-                          <option value="partisan">Partisan</option>
-                          <option value="population_density">Density</option>
-                          <option value="ethnicity">Ethnicity</option>
-                          <option value="white_pct">White %</option>
-                          <option value="black_pct">Black %</option>
-                          <option value="hispanic_pct">Hispanic %</option>
-                          <option value="asian_pct">Asian %</option>
-                          <option value="native_pct">Native %</option>
-                          <option value="pacific_pct">Pacific %</option>
-                        </select>
+                          onChange={onDistrictColorMetricChange}
+                          dropdownAlign="right"
+                          options={[
+                            { value: 'default',            label: 'Color'      },
+                            { value: 'partisan',           label: 'Partisan'   },
+                            { value: 'population_density', label: 'Density'    },
+                            { value: 'ethnicity',          label: 'Ethnicity'  },
+                            { value: 'white_pct',          label: 'White\u00a0%'    },
+                            { value: 'black_pct',          label: 'Black\u00a0%'    },
+                            { value: 'hispanic_pct',       label: 'Hispanic\u00a0%' },
+                            { value: 'asian_pct',          label: 'Asian\u00a0%'    },
+                            { value: 'native_pct',         label: 'Native\u00a0%'   },
+                            { value: 'pacific_pct',        label: 'Pacific\u00a0%'  },
+                          ]}
+                        />
+                      </div>
                     </th>
                   </tr>
                 </thead>
