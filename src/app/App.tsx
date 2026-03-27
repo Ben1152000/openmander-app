@@ -9,7 +9,7 @@ import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
-  ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK,
+  ZOOM_THRESHOLD_VTD_TO_BLOCK,
 } from './constants/config';
 import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from './constants/metrics';
 import { useSidebarResize } from './hooks/useSidebarResize';
@@ -164,7 +164,7 @@ export default function App() {
   );
 
   // CSV metric data (refs, populated via worker 'metrics' message)
-  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, blockToParentsRef, parentBlockIndicesRef, clearMetrics, applyMetrics } = useMapMetrics();
+  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, parentBlockIndicesRef, clearMetrics, applyMetrics } = useMapMetrics();
 
   // District geometries, stats, swatch colors
   const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData } =
@@ -225,7 +225,7 @@ export default function App() {
     mapRef, mapInitialized, sourcesVersion,
     visualizationMode, visualizationModeRef, districtColorMetric,
     districtGeoJson, districtStats, currentLayer,
-    activeLayerRef, geoIdByIndexRef, partisanLeanRef, ethnicityDataRef, scalarDataRef,
+    activeLayerRef,
   });
 
   useMetricFeatureState({

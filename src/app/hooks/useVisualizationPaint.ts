@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { Map } from 'maplibre-gl';
+import type { Map as MaplibreMap } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
 import {
   rampColor,
@@ -23,7 +23,7 @@ const DISTRICT_FILL_COLOR_EXPR = [
 ];
 
 export function useVisualizationPaint(params: {
-  mapRef: MutableRefObject<Map | null>;
+  mapRef: MutableRefObject<MaplibreMap | null>;
   mapInitialized: boolean;
   sourcesVersion: number;
   visualizationMode: 'districts' | 'map';
@@ -33,16 +33,12 @@ export function useVisualizationPaint(params: {
   districtStats: DistrictStat[] | null;
   currentLayer: string;
   activeLayerRef: MutableRefObject<string>;
-  geoIdByIndexRef: MutableRefObject<Record<string, Record<number, string>>>;
-  partisanLeanRef: MutableRefObject<Record<string, number>>;
-  ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
-  scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
 }) {
   const {
     mapRef, mapInitialized, sourcesVersion,
     visualizationMode, visualizationModeRef, districtColorMetric,
     districtGeoJson, districtStats, currentLayer,
-    activeLayerRef, geoIdByIndexRef, partisanLeanRef, ethnicityDataRef, scalarDataRef,
+    activeLayerRef,
   } = params;
 
   // Stable refs for district layers, managed entirely within this effect

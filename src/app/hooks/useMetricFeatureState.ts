@@ -15,7 +15,7 @@
  *   to re-apply states after panning loads new tiles.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import type { Map as MaplibreMap } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
 import {
