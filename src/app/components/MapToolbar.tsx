@@ -108,7 +108,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
             value={layerOverride ?? 'auto'}
             onChange={v => onLayerOverrideChange(v === 'auto' ? null : v)}
             options={[
-              { value: 'auto', label: `Auto (${LAYER_OPTIONS.findLast(o => currentZoom >= o.minZoom)?.label ?? 'County'})`, buttonLabel: 'Auto' },
+              { value: 'auto', label: `Auto (${[...LAYER_OPTIONS].reverse().find(o => currentZoom >= o.minZoom)?.label ?? 'County'})`, buttonLabel: 'Auto' },
               ...availableOptions,
             ]}
           />
