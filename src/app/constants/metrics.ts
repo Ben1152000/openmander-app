@@ -10,6 +10,8 @@ export interface DistrictStat {
   areaSqKm: number;
   populationDensity: number; // people per km²
   turnout: number;           // fraction 0–1: total pres votes / VAP
+  vap: number;               // voting age population
+  votesCast: number;         // E_20_PRES_Total (all pres votes including third party)
   whitePct: number;
   blackPct: number;
   hispanicPct: number;

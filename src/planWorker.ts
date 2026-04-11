@@ -141,9 +141,11 @@ function sendStats() {
       repVotes: repVotes?.[i] ?? 0,
       areaSqKm: landM2 ? landM2[i] / 1e6 : 0,
       populationDensity: landM2 && landM2[i] > 0 ? pop / (landM2[i] / 1e6) : 0,
+      votesCast: presTotal ? presTotal[i] : ((demVotes?.[i] ?? 0) + (repVotes?.[i] ?? 0)),
       turnout: vap20 && vap20[i] > 0
         ? (presTotal ? presTotal[i] : ((demVotes?.[i] ?? 0) + (repVotes?.[i] ?? 0))) / vap20[i]
         : 0,
+      vap: vap20?.[i] ?? 0,
       whitePct:    pct(ethnicTotals['White']),
       blackPct:    pct(ethnicTotals['Black']),
       hispanicPct: pct(ethnicTotals['Hispanic']),
@@ -174,12 +176,20 @@ self.onmessage = async (e: MessageEvent) => {
       wasmPlan?.free();
 
       wasmMap = new WasmMap(msg.packFiles);
+      // Pack bytes are now in WASM linear memory; drop JS references so GC can
+      // reclaim the ~1 GB of JS ArrayBuffers before Plan allocation begins.
+      for (const key in msg.packFiles) delete (msg.packFiles as any)[key];
       wasmPlan = new WasmPlan(wasmMap, msg.numDistricts);
       lastGeometryMs = 0;
 
+      // Export geo_id index so the main thread can enable painting immediately,
+      // without waiting for the metrics worker to finish parsing the block CSV.
+      const geoIdIndexJson: string = (wasmMap as any).geo_id_index_json();
+      const geoIdIndex: Record<string, string[]> = JSON.parse(geoIdIndexJson);
+
       sendStats();
       log('[Worker] Ready');
-      self.postMessage({ type: 'ready' });
+      self.postMessage({ type: 'ready', geoIdIndex });
 
     } else if (msg.type === 'randomize') {
       if (!wasmPlan) throw new Error('Worker not initialized');

@@ -6,6 +6,8 @@ import { Map as MapIcon, LayoutList } from 'lucide-react';
 import { SidePanel } from '@/app/components/SidePanel';
 import { MapViewer } from '@/app/components/MapViewer';
 import { MapToolbar, type DrawingTool } from '@/app/components/MapToolbar';
+import { UnitTooltip } from '@/app/components/UnitTooltip';
+import { DistrictTooltip } from '@/app/components/DistrictTooltip';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
@@ -110,6 +112,9 @@ export default function App() {
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
+  const [hoverUnit, setHoverUnit] = useState<{ geoId: string; layer: string; x: number; y: number } | null>(null);
+  const [hoverDistrict, setHoverDistrict] = useState<{ district: number; x: number; y: number } | null>(null);
+  const isDistrictHoveredRef = useRef(false);
   const [prevDistrict, setPrevDistrict] = useState<number>(0);
 
   useEffect(() => {
@@ -125,6 +130,7 @@ export default function App() {
       setActiveDistrict(prevDistrict);
       setPrevDistrict(0);
     }
+    if (tool !== 'pointer') { setHoverUnit(null); setHoverDistrict(null); }
     setDrawingTool(tool);
   };
   const [, setDistrictCounts] = useState<Record<number, number>>({});
@@ -154,7 +160,7 @@ export default function App() {
   // Refs so WorkerPlan callbacks always call the latest hook-provided functions.
   const applyWorkerGeometriesRef = useRef<((items: any[], dem: number[] | null, rep: number[] | null) => void) | null>(null);
   const applyWorkerStatsRef = useRef<((ds: any[], rs: any) => void) | null>(null);
-  const applyMetricsRef = useRef<((pl: any, gi: any, sd: any, ed: any, bp: any, prb: any) => void) | null>(null);
+  const applyMetricsRef = useRef<((...args: any[]) => void) | null>(null);
 
   // Pack loading (fetches pack files, PMTiles buffer)
   const { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, resetPmtilesBuffer } = usePackLoader(
@@ -164,7 +170,7 @@ export default function App() {
   );
 
   // CSV metric data (refs, populated via worker 'metrics' message)
-  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, parentBlockIndicesRef, clearMetrics, applyMetrics } = useMapMetrics();
+  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, parentBlockIndicesRef, unitNamesRef, unitPopulationRef, unitElectionVotesRef, unitEthnicCountsRef, unitLandKm2Ref, unitVapRef, electionNameRef, censusNameRef, clearMetrics, applyMetrics, seedGeoIdIndex } = useMapMetrics();
 
   // District geometries, stats, swatch colors
   const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData } =
@@ -218,7 +224,71 @@ export default function App() {
     geoIdByIndexRef, automationRunning,
     onAssignUnit: (layer, geoId, district) => { planRef.current?.assignUnit(layer, geoId, district); },
     onAssignUnitsBatch: (layer, geoIds, district) => { planRef.current?.assignUnitsBatch(layer, geoIds, district); },
+    onHoverUnit: (info) => setHoverUnit(info),
+    isDistrictHoveredRef,
   });
+
+  // District hover for pointer tool tooltip + highlight
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapInitialized || drawingTool !== 'pointer' || visualizationMode !== 'districts') {
+      setHoverDistrict(null);
+      return;
+    }
+
+    let hoveredId: number | null = null;
+    const clearDistrictHover = () => {
+      if (hoveredId != null) {
+        // Guard: source may have been removed if districtGeoJson was cleared.
+        if (map.getSource('district-boundaries')) {
+          map.setFeatureState({ source: 'district-boundaries', id: hoveredId }, { hover: false });
+        }
+        hoveredId = null;
+      }
+    };
+
+    const onMove = (e: any) => {
+      const district = e.features?.[0]?.properties?.district as number | undefined;
+      if (district == null) return;
+      if (district !== hoveredId) {
+        clearDistrictHover();
+        hoveredId = district;
+        map.setFeatureState({ source: 'district-boundaries', id: district }, { hover: true });
+      }
+      isDistrictHoveredRef.current = true;
+      setHoverDistrict({ district, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+    };
+    const onLeave = () => { clearDistrictHover(); isDistrictHoveredRef.current = false; setHoverDistrict(null); };
+
+    const onClick = (e: any) => {
+      const district = e.features?.[0]?.properties?.district as number | undefined;
+      if (district == null) return;
+      setActiveDistrict(district);
+      setPrevDistrict(0);
+    };
+
+    // Native DOM mousemove on the canvas container — fires even during MapLibre
+    // drag-pan, unlike MapLibre's own mousemove which stops during a drag.
+    const container = map.getCanvasContainer();
+    const nativeMouseMove = (e: MouseEvent) => {
+      if (hoveredId == null) return;
+      setHoverDistrict(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
+    };
+
+    map.on('mousemove', 'district-boundaries-fill', onMove);
+    map.on('mouseleave', 'district-boundaries-fill', onLeave);
+    map.on('click', 'district-boundaries-fill', onClick);
+    container.addEventListener('mousemove', nativeMouseMove);
+    return () => {
+      map.off('mousemove', 'district-boundaries-fill', onMove);
+      map.off('mouseleave', 'district-boundaries-fill', onLeave);
+      map.off('click', 'district-boundaries-fill', onClick);
+      container.removeEventListener('mousemove', nativeMouseMove);
+      clearDistrictHover();
+      isDistrictHoveredRef.current = false;
+      setHoverDistrict(null);
+    };
+  }, [drawingTool, visualizationMode, mapInitialized]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Visualization paint (district overlay + base layer coloring)
   useVisualizationPaint({
@@ -269,6 +339,18 @@ export default function App() {
           setLoadingStatus('');
         }
       },
+      onReady: (geoIdIndex) => {
+        // Seed geoIdByIndex from WASM so painting works before the metrics worker
+        // finishes parsing the block CSV. Uses a non-destructive merge so that if
+        // the metrics worker already completed (fast states), its data is preserved.
+        const converted: Record<string, Record<number, string>> = {};
+        for (const [layer, ids] of Object.entries(geoIdIndex)) {
+          const m: Record<number, string> = {};
+          for (let i = 0; i < ids.length; i++) m[i] = ids[i];
+          converted[layer] = m;
+        }
+        seedGeoIdIndex(converted);
+      },
       onGeometries: (items, dem, rep) => applyWorkerGeometriesRef.current?.(items, dem, rep),
       onStats: (ds, rs) => applyWorkerStatsRef.current?.(ds, rs),
     });
@@ -297,7 +379,13 @@ export default function App() {
     metricsWorkerRef.current?.terminate();
     const mw = new Worker(new URL('../metricsWorker.ts', import.meta.url), { type: 'module' });
     mw.onmessage = (e) => {
-      applyMetricsRef.current?.(e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData, e.data.blockToParents ?? {}, e.data.parentBlockIndices ?? {});
+      applyMetricsRef.current?.(
+        e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData,
+        e.data.blockToParents ?? {}, e.data.parentBlockIndices ?? {},
+        e.data.unitNames ?? {}, e.data.unitPopulation ?? {},
+        e.data.unitElectionVotes ?? {}, e.data.unitEthnicCounts ?? {},
+        e.data.unitLandKm2 ?? {}, e.data.unitVap ?? {}, e.data.electionName ?? '', e.data.censusName ?? '',
+      );
       metricStateUpdateRef.current?.();
       mw.terminate();
     };
@@ -562,6 +650,36 @@ export default function App() {
       loadingStatus={loadingStatus}
       activeLayer={activeLayer}
     >
+      {drawingTool === 'pointer' && hoverDistrict && (
+        <DistrictTooltip
+          district={hoverDistrict.district}
+          x={hoverDistrict.x}
+          y={hoverDistrict.y}
+          districtStats={districtStats}
+          districtColorMetric={districtColorMetric}
+          electionNameRef={electionNameRef}
+          censusNameRef={censusNameRef}
+        />
+      )}
+      {drawingTool === 'pointer' && !hoverDistrict && hoverUnit && (
+        <UnitTooltip
+          geoId={hoverUnit.geoId}
+          layer={hoverUnit.layer}
+          x={hoverUnit.x}
+          y={hoverUnit.y}
+          districtColorMetric={districtColorMetric}
+          unitNamesRef={unitNamesRef}
+          unitPopulationRef={unitPopulationRef}
+          scalarDataRef={scalarDataRef}
+          ethnicityDataRef={ethnicityDataRef}
+          unitElectionVotesRef={unitElectionVotesRef}
+          unitEthnicCountsRef={unitEthnicCountsRef}
+          unitLandKm2Ref={unitLandKm2Ref}
+          unitVapRef={unitVapRef}
+          electionNameRef={electionNameRef}
+          censusNameRef={censusNameRef}
+        />
+      )}
       <MapToolbar
         drawingTool={drawingTool}
         onDrawingToolChange={handleDrawingToolChange}

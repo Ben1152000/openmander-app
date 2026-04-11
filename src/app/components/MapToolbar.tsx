@@ -1,10 +1,10 @@
-import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect } from 'lucide-react';
+import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect, MousePointer2 } from 'lucide-react';
 import type React from 'react';
 import { CustomSelect } from './CustomSelect';
 import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK } from '@/app/constants/config';
 import type { LayerZoomRanges } from '@/app/hooks/usePackLoader';
 
-export type DrawingTool = 'pan' | 'paint' | 'erase' | 'box';
+export type DrawingTool = 'pan' | 'paint' | 'erase' | 'box' | 'pointer';
 
 const LAYER_OPTIONS: { value: string; label: string; minZoom: number }[] = [
   { value: 'county', label: 'County', minZoom: 0 },
@@ -46,7 +46,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
 
   const toolButton = (tool: DrawingTool, icon: React.ReactNode, title: string) => {
     const isPaintTool = tool === 'paint' || tool === 'erase' || tool === 'box';
-    const disabled = (isPaintTool && !workerReady) || (tool === 'paint' && activeDistrict === 0 && prevDistrict === 0);
+    const disabled = (isPaintTool && !workerReady) || (tool === 'paint' && activeDistrict === 0 && prevDistrict === 0) || (tool === 'pointer' && !workerReady);
     return (
       <button
         key={tool}
@@ -71,6 +71,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
       {/* Drawing Tools */}
       <div className="flex items-center gap-1 bg-white rounded-lg shadow-lg p-1 pointer-events-auto">
         {toolButton('pan', <Hand className="w-5 h-5" />, 'Pan')}
+        {toolButton('pointer', <MousePointer2 className="w-5 h-5" />, 'Inspect')}
         {toolButton('paint', <Paintbrush className="w-5 h-5" />, 'Paint')}
         {toolButton('erase', <Eraser className="w-5 h-5" />, 'Erase')}
         {toolButton('box', (

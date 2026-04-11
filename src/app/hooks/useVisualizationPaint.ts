@@ -58,6 +58,7 @@ export function useVisualizationPaint(params: {
 
     const removeDistrictOverlay = () => {
       if (map.getLayer('district-labels')) map.removeLayer('district-labels');
+      if (map.getLayer('district-boundaries-hover')) map.removeLayer('district-boundaries-hover');
       if (map.getLayer('district-boundaries-fill')) map.removeLayer('district-boundaries-fill');
       if (map.getLayer('district-boundaries-line')) map.removeLayer('district-boundaries-line');
       if (map.getSource(districtSourceId)) map.removeSource(districtSourceId);
@@ -71,6 +72,12 @@ export function useVisualizationPaint(params: {
         map.addSource(districtSourceId, { type: 'geojson', data: districtGeoJson });
         map.addLayer({ id: 'district-boundaries-fill', type: 'fill', source: districtSourceId,
           paint: { 'fill-color': DISTRICT_FILL_COLOR_EXPR as any, 'fill-opacity': 0.60 } });
+        map.addLayer({ id: 'district-boundaries-hover', type: 'fill', source: districtSourceId,
+          paint: {
+            'fill-color': '#000000',
+            'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.25, 0] as any,
+            'fill-opacity-transition': { duration: 0 },
+          } });
         map.addLayer({ id: 'district-boundaries-line', type: 'line', source: districtSourceId,
           paint: { 'line-color': '#333333', 'line-width': 1.5, 'line-opacity': 1.0 } });
         map.addLayer({ id: 'district-labels', type: 'symbol', source: districtSourceId,

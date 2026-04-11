@@ -16,11 +16,13 @@ export function usePaintHandlers(params: {
   onAssignUnit: (layer: string, geoId: string, district: number) => void;
   onAssignUnitsBatch: (layer: string, geoIds: string[], district: number) => void;
   automationRunning: boolean;
+  onHoverUnit?: (info: { geoId: string; layer: string; x: number; y: number } | null) => void;
+  isDistrictHoveredRef?: MutableRefObject<boolean>;
 }) {
   const {
     mapRef, mapInitialized, currentLayer, drawingTool, activeDistrict,
     assignmentsRef, setDistrictCounts, featureHashesRef, geoIdByIndexRef,
-    onAssignUnit, onAssignUnitsBatch, automationRunning,
+    onAssignUnit, onAssignUnitsBatch, automationRunning, onHoverUnit, isDistrictHoveredRef,
   } = params;
 
   const hoveredIdRef = useRef<string | number | null>(null);
@@ -41,6 +43,70 @@ export function usePaintHandlers(params: {
         hoveredIdRef.current = null;
       }
     };
+
+    // ── Pointer (inspect) tool ───────────────────────────────────────────────────
+    if (drawingTool === 'pointer') {
+      map.getCanvas().style.cursor = 'default';
+
+      const lastGeoIdRef = { current: null as string | null };
+
+      const pointerMouseMove = (e: any) => {
+        map.getCanvas().style.cursor = 'default';
+        const featureId = e.features?.[0]?.id;
+        if (featureId == null) return;
+
+        if (isDistrictHoveredRef?.current) {
+          // A district is on top — clear any unit highlight and skip.
+          clearHover();
+          return;
+        }
+
+        if (featureId !== hoveredIdRef.current) {
+          clearHover();
+          hoveredIdRef.current = featureId;
+          map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id: featureId }, { hover: true });
+        }
+
+        const index = (e.features?.[0] as any)?.properties?.index;
+        const geoId = geoIdByIndexRef.current[currentLayer]?.[parseInt(index)];
+        if (geoId) {
+          lastGeoIdRef.current = geoId;
+          onHoverUnit?.({ geoId, layer: currentLayer, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+        }
+      };
+
+      // Native DOM mousemove on the canvas container — fires even during MapLibre
+      // drag-pan, unlike MapLibre's own mousemove which stops during a drag.
+      const container = map.getCanvasContainer();
+      const nativeMouseMove = (e: MouseEvent) => {
+        if (isDistrictHoveredRef?.current) { clearHover(); return; }
+        if (!lastGeoIdRef.current) return;
+        onHoverUnit?.({ geoId: lastGeoIdRef.current, layer: currentLayer, x: e.clientX, y: e.clientY });
+      };
+
+      const pointerMouseLeave = () => {
+        map.getCanvas().style.cursor = '';
+        clearHover();
+        lastGeoIdRef.current = null;
+        onHoverUnit?.(null);
+      };
+
+      map.on('mousemove', fillLayerId, pointerMouseMove);
+      container.addEventListener('mousemove', nativeMouseMove);
+      map.on('mouseleave', fillLayerId, pointerMouseLeave);
+      map.on('mouseleave', pointerMouseLeave);
+
+      return () => {
+        map.off('mousemove', fillLayerId, pointerMouseMove);
+        container.removeEventListener('mousemove', nativeMouseMove);
+        map.off('mouseleave', fillLayerId, pointerMouseLeave);
+        map.off('mouseleave', pointerMouseLeave);
+        clearHover();
+        lastGeoIdRef.current = null;
+        onHoverUnit?.(null);
+        map.getCanvas().style.cursor = '';
+      };
+    }
 
     // ── Box select tool ─────────────────────────────────────────────────────────
     if (drawingTool === 'box' && !automationRunning) {

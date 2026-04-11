@@ -11,6 +11,7 @@ export type GeometryItem = { district: number; wkb: Uint8Array };
 export type DistrictStat = {
   district: number; color: string; population: number; deviation: number;
   demVotes: number; repVotes: number; areaSqKm: number; populationDensity: number;
+  turnout: number; vap: number; votesCast: number;
   whitePct: number; blackPct: number; hispanicPct: number;
   asianPct: number; nativePct: number; pacificPct: number;
 };
@@ -25,6 +26,7 @@ export type WorkerPlanCallbacks = {
   onAssignments: (data: Uint32Array, done: boolean) => void;
   onGeometries: (items: GeometryItem[], demTotals: number[] | null, repTotals: number[] | null) => void;
   onStats: (districtStats: DistrictStat[], regionStats: RegionStats) => void;
+  onReady: (geoIdIndex: Record<string, string[]>) => void;
   onLog: (message: string) => void;
 };
 
@@ -53,6 +55,7 @@ export class WorkerPlan {
         break;
 
       case 'ready':
+        this.callbacks.onReady(msg.geoIdIndex ?? {});
         if (this.waitingFor === 'ready') this.settle();
         break;
 
