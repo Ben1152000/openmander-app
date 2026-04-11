@@ -108,5 +108,10 @@ export function usePackLoader(
     return () => controller.abort();
   }, [loadedState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, resetPmtilesBuffer: () => setPmtilesBufferReady(false) };
+  // Derived immediately from packFiles keys — no async wait needed.
+  const hasVtd = mapData === null
+    ? true // default true while loading to avoid flicker
+    : Object.keys(mapData.packFiles).some(k => /^data\/vtd[./]/.test(k));
+
+  return { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, hasVtd, resetPmtilesBuffer: () => setPmtilesBufferReady(false) };
 }

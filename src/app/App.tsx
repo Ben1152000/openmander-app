@@ -11,7 +11,7 @@ import { DistrictTooltip } from '@/app/components/DistrictTooltip';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
-  ZOOM_THRESHOLD_VTD_TO_BLOCK,
+  ZOOM_THRESHOLD_VTD_TO_BLOCK, midZoomLayer, isPolarState, POLAR_ZOOM_OFFSET,
 } from './constants/config';
 import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from './constants/metrics';
 import { useSidebarResize } from './hooks/useSidebarResize';
@@ -33,11 +33,11 @@ const BLOCK_PRELOAD_RANGE = 0.5;
  * County and VTD are always preloaded (cheap). Block only near its threshold.
  * Manual overrides use 'none' for all inactive layers.
  */
-function layerDisplayMode(name: string, activeLayer: string, zoom: number, layerOverride: string | null): 'active' | 'preload' | 'none' {
+function layerDisplayMode(name: string, activeLayer: string, zoom: number, layerOverride: string | null, hasVtd: boolean, zoomOffset = 0): 'active' | 'preload' | 'none' {
   if (name === activeLayer) return 'active';
   if (layerOverride !== null) return 'none';
-  if (name === 'county' || name === 'vtd') return 'preload';
-  if (name === 'block' && zoom >= ZOOM_THRESHOLD_VTD_TO_BLOCK - BLOCK_PRELOAD_RANGE) return 'preload';
+  if (name === 'county' || name === midZoomLayer(hasVtd)) return 'preload';
+  if (name === 'block' && zoom >= ZOOM_THRESHOLD_VTD_TO_BLOCK - zoomOffset - BLOCK_PRELOAD_RANGE) return 'preload';
   return 'none';
 }
 
@@ -100,6 +100,8 @@ export default function App() {
   const [layerOverride, setLayerOverrideState] = useState<string | null>(null);
   const layerOverrideRef = useRef<string | null>(null);
   const setLayerOverride = (v: string | null) => { layerOverrideRef.current = v; setLayerOverrideState(v); };
+  const hasVtdRef = useRef(true);
+  const polarZoomOffsetRef = useRef(0);
 
   // Assignments and painting
   const assignmentsRef = useRef<Record<string, number>>({});
@@ -163,11 +165,14 @@ export default function App() {
   const applyMetricsRef = useRef<((...args: any[]) => void) | null>(null);
 
   // Pack loading (fetches pack files, PMTiles buffer)
-  const { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, resetPmtilesBuffer } = usePackLoader(
+  const { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, hasVtd, resetPmtilesBuffer } = usePackLoader(
     loadedState,
     setLoadingStatus,
     () => { setDistrictGeoJson(null); },
   );
+  hasVtdRef.current = hasVtd;
+  const loadedConfig = loadedState ? STATE_CONFIGS[loadedState] : undefined;
+  polarZoomOffsetRef.current = loadedConfig && isPolarState(loadedConfig) ? POLAR_ZOOM_OFFSET : 0;
 
   // CSV metric data (refs, populated via worker 'metrics' message)
   const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, parentBlockIndicesRef, unitNamesRef, unitPopulationRef, unitElectionVotesRef, unitEthnicCountsRef, unitLandKm2Ref, unitVapRef, electionNameRef, censusNameRef, clearMetrics, applyMetrics, seedGeoIdIndex } = useMapMetrics();
@@ -188,13 +193,13 @@ export default function App() {
   useEffect(() => {
     if (!mapRef.current || !mapInitialized || sourcesVersion === 0) return;
     const map = mapRef.current;
-    const targetLayer = layerOverride ?? getLayerForZoom(map.getZoom());
+    const targetLayer = layerOverride ?? getLayerForZoom(map.getZoom(), hasVtdRef.current, polarZoomOffsetRef.current);
     previousLayerRef.current = targetLayer;
     activeLayerRef.current = targetLayer;
     const currentZoom = map.getZoom();
     const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
     for (const name of allLayers) {
-      const mode = layerDisplayMode(name, targetLayer, currentZoom, layerOverride);
+      const mode = layerDisplayMode(name, targetLayer, currentZoom, layerOverride, hasVtdRef.current, polarZoomOffsetRef.current);
       const isActive = mode === 'active';
       const visible = mode !== 'none';
       if (map.getLayer(`units-${name}-fill`)) {
@@ -311,6 +316,7 @@ export default function App() {
     partisanLeanRef,
     ethnicityDataRef,
     scalarDataRef,
+    hasVtd,
     updateTriggerRef: metricStateUpdateRef,
   });
 
@@ -425,7 +431,7 @@ export default function App() {
         setCurrentZoom(zoom);
         if (layerOverrideRef.current) return; // fixed override: skip auto-switching
 
-        const newLayer = getLayerForZoom(zoom);
+        const newLayer = getLayerForZoom(zoom, hasVtdRef.current, polarZoomOffsetRef.current);
         const previousLayer = previousLayerRef.current;
 
         if (newLayer !== previousLayer) {
@@ -434,7 +440,7 @@ export default function App() {
 
           const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
           for (const name of allLayers) {
-            const mode = layerDisplayMode(name, newLayer, zoom, null);
+            const mode = layerDisplayMode(name, newLayer, zoom, null, hasVtdRef.current, polarZoomOffsetRef.current);
             const isActive = mode === 'active';
             const visible = mode !== 'none';
             if (map.getLayer(`units-${name}-fill`)) {
@@ -454,7 +460,7 @@ export default function App() {
       });
 
       const initialZoom = map.getZoom();
-      const initialLayer = getLayerForZoom(initialZoom);
+      const initialLayer = getLayerForZoom(initialZoom, hasVtdRef.current, polarZoomOffsetRef.current);
       previousLayerRef.current = initialLayer;
       activeLayerRef.current = initialLayer;
       setActiveLayer(initialLayer);
@@ -610,7 +616,10 @@ export default function App() {
     onPendingStateChange: (state: string) => {
       if (loadedState) return;
       const config = STATE_CONFIGS[state];
-      if (config && mapRef.current) mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40 });
+      if (config && mapRef.current) {
+        mapRef.current.stop();
+        mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40, curve: 0.5 });
+      }
     },
     activeDistrict,
     onActiveDistrictChange: (n: number) => { setActiveDistrict(n); if (n !== 0) setPrevDistrict(0); },
@@ -692,6 +701,7 @@ export default function App() {
         onLayerOverrideChange={setLayerOverride}
         currentZoom={currentZoom}
         layerZoomRanges={layerZoomRanges}
+        hasVtd={hasVtd}
         visible={mapInitialized && !loadingPack && pmtilesBufferReady}
         workerReady={workerReady}
         activeDistrict={activeDistrict}

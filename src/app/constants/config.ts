@@ -4,6 +4,8 @@ import stateBoundsData from './state-extents.json';
 
 export const ZOOM_THRESHOLD_COUNTY_TO_VTD = 8;
 export const ZOOM_THRESHOLD_VTD_TO_BLOCK = 12;
+export const POLAR_CIRCLE_LAT = 66.5;
+export const POLAR_ZOOM_OFFSET = 2;
 export const DEFAULT_ZOOM = 6;
 export const DEFAULT_NUM_DISTRICTS = 17; // Illinois congressional districts
 export const DEFAULT_LAYER = 'county';
@@ -16,9 +18,20 @@ export interface StateConfig {
   districts: number;
 }
 
-export function getLayerForZoom(zoom: number): string {
-  if (zoom < ZOOM_THRESHOLD_COUNTY_TO_VTD) return 'county';
-  if (zoom < ZOOM_THRESHOLD_VTD_TO_BLOCK) return 'vtd';
+/** Returns the internal layer name used for the precinct zoom level. */
+export function midZoomLayer(hasVtd: boolean): 'vtd' | 'group' {
+  return hasVtd ? 'vtd' : 'group';
+}
+
+/** Returns true if the state's bounds extend beyond the Arctic or Antarctic circle. */
+export function isPolarState(config: StateConfig): boolean {
+  const [[, south], [, north]] = config.bounds;
+  return north > POLAR_CIRCLE_LAT || south < -POLAR_CIRCLE_LAT;
+}
+
+export function getLayerForZoom(zoom: number, hasVtd = true, zoomOffset = 0): string {
+  if (zoom < ZOOM_THRESHOLD_COUNTY_TO_VTD - zoomOffset) return 'county';
+  if (zoom < ZOOM_THRESHOLD_VTD_TO_BLOCK - zoomOffset) return midZoomLayer(hasVtd);
   return 'block';
 }
 
@@ -36,16 +49,17 @@ function boundsFor(name: string): [[number, number], [number, number]] {
 
 export const STATE_CONFIGS: Record<string, StateConfig> = {
   alabama:              { packDir: 'AL/AL_2020_webpack', bounds: boundsFor('alabama'),           districts: 7  },
-  // alaska:               { packDir: 'AK/AK_2020_webpack', bounds: boundsFor('alaska'),            districts: 1  },
+  alaska:               { packDir: 'AK/AK_2020_webpack', bounds: boundsFor('alaska'),            districts: 1  },
   arizona:              { packDir: 'AZ/AZ_2020_webpack', bounds: boundsFor('arizona'),           districts: 9  },
   arkansas:             { packDir: 'AR/AR_2020_webpack', bounds: boundsFor('arkansas'),          districts: 4  },
   california:           { packDir: 'CA/CA_2020_webpack', bounds: boundsFor('california'),        districts: 52 },
   colorado:             { packDir: 'CO/CO_2020_webpack', bounds: boundsFor('colorado'),          districts: 8  },
   connecticut:          { packDir: 'CT/CT_2020_webpack', bounds: boundsFor('connecticut'),       districts: 5  },
   delaware:             { packDir: 'DE/DE_2020_webpack', bounds: boundsFor('delaware'),          districts: 1  },
+  'district of columbia': { packDir: 'DC/DC_2020_webpack', bounds: boundsFor('district of columbia'), districts: 1  },
   florida:              { packDir: 'FL/FL_2020_webpack', bounds: boundsFor('florida'),           districts: 28 },
   georgia:              { packDir: 'GA/GA_2020_webpack', bounds: boundsFor('georgia'),           districts: 14 },
-  // hawaii:               { packDir: 'HI/HI_2020_webpack', bounds: boundsFor('hawaii'),            districts: 2  },
+  hawaii:               { packDir: 'HI/HI_2020_webpack', bounds: boundsFor('hawaii'),            districts: 2  },
   idaho:                { packDir: 'ID/ID_2020_webpack', bounds: boundsFor('idaho'),             districts: 2  },
   illinois:             { packDir: 'IL/IL_2020_webpack', bounds: boundsFor('illinois'),          districts: 17 },
   indiana:              { packDir: 'IN/IN_2020_webpack', bounds: boundsFor('indiana'),           districts: 9  },

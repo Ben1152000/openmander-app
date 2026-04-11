@@ -1,17 +1,10 @@
 import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect, MousePointer2 } from 'lucide-react';
 import type React from 'react';
 import { CustomSelect } from './CustomSelect';
-import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK } from '@/app/constants/config';
+import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK, midZoomLayer } from '@/app/constants/config';
 import type { LayerZoomRanges } from '@/app/hooks/usePackLoader';
 
 export type DrawingTool = 'pan' | 'paint' | 'erase' | 'box' | 'pointer';
-
-const LAYER_OPTIONS: { value: string; label: string; minZoom: number }[] = [
-  { value: 'county', label: 'County', minZoom: 0 },
-  { value: 'tract',  label: 'Tract',  minZoom: ZOOM_THRESHOLD_COUNTY_TO_VTD },
-  { value: 'vtd',    label: 'VTD',    minZoom: ZOOM_THRESHOLD_COUNTY_TO_VTD },
-  { value: 'block',  label: 'Block',  minZoom: ZOOM_THRESHOLD_VTD_TO_BLOCK },
-];
 
 interface MapToolbarProps {
   drawingTool: DrawingTool;
@@ -24,6 +17,7 @@ interface MapToolbarProps {
   onLayerOverrideChange: (layer: string | null) => void;
   currentZoom: number;
   layerZoomRanges: LayerZoomRanges;
+  hasVtd: boolean;
   visible: boolean;
   workerReady: boolean;
   activeDistrict: number;
@@ -31,8 +25,16 @@ interface MapToolbarProps {
 }
 
 
-export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, visible, workerReady, activeDistrict, prevDistrict }: MapToolbarProps) {
+export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, hasVtd, visible, workerReady, activeDistrict, prevDistrict }: MapToolbarProps) {
   if (!visible) return null;
+
+  const precinctLayer = midZoomLayer(hasVtd);
+  const LAYER_OPTIONS = [
+    { value: 'county',       label: 'County',   minZoom: 0 },
+    { value: 'tract',        label: 'Tract',    minZoom: ZOOM_THRESHOLD_COUNTY_TO_VTD },
+    { value: precinctLayer,  label: 'Precinct', minZoom: ZOOM_THRESHOLD_COUNTY_TO_VTD },
+    { value: 'block',        label: 'Block',    minZoom: ZOOM_THRESHOLD_VTD_TO_BLOCK },
+  ];
 
   const hasRanges = Object.keys(layerZoomRanges).length > 0;
   const availableOptions = LAYER_OPTIONS.filter(o => {
@@ -74,16 +76,20 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
         {toolButton('pointer', <MousePointer2 className="w-5 h-5" />, 'Inspect')}
         {toolButton('paint', <Paintbrush className="w-5 h-5" />, 'Paint')}
         {toolButton('erase', <Eraser className="w-5 h-5" />, 'Erase')}
-        {toolButton('box', (
-          <div className="relative">
-            <BoxSelect className="w-5 h-5" />
-            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-px shadow-sm">
-              {activeDistrict === 0
-                ? <Eraser className="w-3.5 h-3.5 text-gray-500" />
-                : <Paintbrush className="w-3.5 h-3.5 text-gray-500" />}
+        {(() => {
+          const boxDisabled = !workerReady;
+          const innerColor = boxDisabled ? 'text-gray-300' : 'text-gray-500';
+          return toolButton('box', (
+            <div className="relative">
+              <BoxSelect className="w-5 h-5" />
+              <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-px shadow-sm">
+                {activeDistrict === 0
+                  ? <Eraser className={`w-3.5 h-3.5 ${innerColor}`} />
+                  : <Paintbrush className={`w-3.5 h-3.5 ${innerColor}`} />}
+              </div>
             </div>
-          </div>
-        ), 'Box select')}
+          ), 'Box select');
+        })()}
       </div>
 
       {/* Right controls — single card with dividers */}

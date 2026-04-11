@@ -22,6 +22,7 @@ import {
   PARTISAN_UNIT_RAMP, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS,
   ETH_COLOR_EXPR,
 } from '@/app/constants/colors';
+import { midZoomLayer } from '@/app/constants/config';
 import { ETHNICITY_METRICS, SCALAR_METRICS, NON_WHITE_GROUPS, ethCatFromPcts } from '@/app/constants/metrics';
 import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
 
@@ -50,13 +51,14 @@ export function useMetricFeatureState(params: {
   partisanLeanRef: MutableRefObject<Record<string, number>>;
   ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
   scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
+  hasVtd: boolean;
   /** Ref to receive a direct-call trigger. Set by this hook; caller invokes it after assignments change. */
   updateTriggerRef?: MutableRefObject<(() => void) | null>;
 }) {
   const {
     mapRef, mapInitialized, sourcesVersion, visualizationMode, districtColorMetric, currentLayer,
     blockAssignmentsRef, geoIdByIndexRef, parentBlockIndicesRef,
-    partisanLeanRef, ethnicityDataRef, scalarDataRef, updateTriggerRef,
+    partisanLeanRef, ethnicityDataRef, scalarDataRef, hasVtd, updateTriggerRef,
   } = params;
 
   const isDistrictView = visualizationMode === 'districts';
@@ -89,7 +91,7 @@ export function useMetricFeatureState(params: {
     // Layers that are always preloaded (visibility:visible, opacity:0 when inactive).
     // Keep their fill expressions and feature states in sync even when not active,
     // so there's no flash when auto-switching to them.
-    const ALWAYS_PRELOADED = ['county', 'vtd'];
+    const ALWAYS_PRELOADED = ['county', midZoomLayer(hasVtd)];
 
     // ── Shared: feature-state fill expression ─────────────────────────────────
 

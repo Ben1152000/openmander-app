@@ -341,7 +341,7 @@ export function SidePanel(props: SidePanelProps) {
                   >
                     {[
                       'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
-                      'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+                      'connecticut', 'delaware', 'district of columbia', 'florida', 'georgia', 'hawaii', 'idaho',
                       'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
                       'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi',
                       'missouri', 'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey',
