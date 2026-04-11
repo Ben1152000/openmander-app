@@ -13,7 +13,7 @@ interface UnitTooltipProps {
   unitPopulationRef: MutableRefObject<Record<string, number>>;
   scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
   ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
-  unitElectionVotesRef: MutableRefObject<Record<string, { dem: number; rep: number }>>;
+  unitElectionVotesRef: MutableRefObject<Record<string, { dem: number; rep: number; total: number }>>;
   unitEthnicCountsRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
   unitLandKm2Ref: MutableRefObject<Record<string, number>>;
   unitVapRef: MutableRefObject<Record<string, number>>;
