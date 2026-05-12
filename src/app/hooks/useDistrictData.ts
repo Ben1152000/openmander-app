@@ -10,7 +10,7 @@ import {
 } from '@/app/constants/metrics';
 import type { DistrictStat, EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
 
-type ColorMetric = 'default' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
+type ColorMetric = 'default' | 'deviation' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
 
 export interface RegionStats {
   totalPop: number;

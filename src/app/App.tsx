@@ -142,7 +142,7 @@ export default function App() {
   const visualizationModeRef = useRef<'districts' | 'map'>('districts');
 
   // District table color metric
-  const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric>('default');
+  const [districtColorMetric, setDistrictColorMetric] = useState<'default' | 'deviation' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric>('default');
   const districtColorMetricRef = useRef<string>('default');
   districtColorMetricRef.current = districtColorMetric;
 

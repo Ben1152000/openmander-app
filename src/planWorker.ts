@@ -166,6 +166,7 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'randomize' }
     | { type: 'randomize-minimize-county-splits'; series: string }
     | { type: 'equalize'; series: string; tolerance: number; maxIter: number; chunkSize?: number }
+    | { type: 'equalize-exact'; series: string }
     | { type: 'debug-equalization-graph'; series: string }
     | { type: 'compute-geometries' }
     | { type: 'assign-unit'; layer: string; geoId: string; district: number }
