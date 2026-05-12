@@ -153,6 +153,74 @@ export class WasmPlan {
         }
     }
     /**
+     * Run a chunk of annealing iterations at a given temperature with geometric cooling.
+     * Returns `{ new_temp, avg_prob, any_accepted }` so the caller can manage the schedule.
+     *
+     * Config format (subset of anneal_from_json):
+     * ```json
+     * { "objectives": [...], "phase_cooling_rates": [0.001], "batch_size": 1000 }
+     * ```
+     * @param {string} config_json
+     * @param {number} temperature
+     * @returns {any}
+     */
+    anneal_chunk_from_json(config_json, temperature) {
+        const ptr0 = passStringToWasm0(config_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmplan_anneal_chunk_from_json(this.__wbg_ptr, ptr0, len0, temperature);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Run simulated annealing optimization with a JSON config.
+     *
+     * Config format:
+     * ```json
+     * {
+     *   "objectives": [{ "metrics": [{ "type": "PopulationDeviationSmooth", "pop_series": "T_20_CENS_Total" }], "weights": [1.0] }],
+     *   "max_iter": 500000,
+     *   "init_temp": 1.0,
+     *   "phase_start_probs": [0.8],
+     *   "phase_end_probs": [null],
+     *   "phase_cooling_rates": [0.001],
+     *   "early_stop_iters": 100000,
+     *   "temp_search_batch_size": 1000,
+     *   "batch_size": 1000
+     * }
+     * ```
+     * @param {string} config_json
+     */
+    anneal_from_json(config_json) {
+        const ptr0 = passStringToWasm0(config_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmplan_anneal_from_json(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Tune temperature via binary search until average acceptance probability reaches `target_prob`.
+     * Returns the tuned temperature. Runs blocking (fast: ~10-20 batches).
+     *
+     * Config format (subset of anneal_from_json):
+     * ```json
+     * { "objectives": [...], "init_temp": 1.0, "phase_start_probs": [0.8], "temp_search_batch_size": 1000 }
+     * ```
+     * @param {string} config_json
+     * @returns {number}
+     */
+    anneal_tune_temp_from_json(config_json) {
+        const ptr0 = passStringToWasm0(config_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmplan_anneal_tune_temp_from_json(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
      * Assign all blocks belonging to a geographic unit to a given district.
      * `layer`: geographic level ("block", "vtd", "tract", "county", etc.)
      * `geo_id`: FIPS identifier for the unit at that level.
@@ -251,6 +319,48 @@ export class WasmPlan {
         }
     }
     /**
+     * Perform exact population equalization using ILP block swaps.
+     * Returns the number of blocks moved.
+     * @param {string} series
+     * @returns {number}
+     */
+    equalize_exact(series) {
+        const ptr0 = passStringToWasm0(series, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmplan_equalize_exact(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * Build the equalization graph and spanning tree for the current partition.
+     * Prints all edges and feasible net_flows to the browser console, and
+     * returns a one-line summary string.  Intended for development/debugging.
+     * @param {string} series
+     * @returns {string}
+     */
+    equalize_exact_debug(series) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(series, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.wasmplan_equalize_exact_debug(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
+    }
+    /**
      * Run one outer iteration of equalization. Returns `true` if converged.
      * @param {string} series
      * @param {number} tolerance
@@ -300,6 +410,17 @@ export class WasmPlan {
     }
     randomize() {
         const ret = wasm.wasmplan_randomize(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {string} series
+     */
+    randomize_minimize_county_splits(series) {
+        const ptr0 = passStringToWasm0(series, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmplan_randomize_minimize_county_splits(this.__wbg_ptr, ptr0, len0);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }

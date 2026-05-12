@@ -129,6 +129,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
             onChange={onDistrictColorMetricChange}
             options={[
               { value: 'default',            label: 'Color'      },
+              { value: 'deviation',          label: 'Deviation'  },
               { value: 'partisan',           label: 'Partisan'   },
               { value: 'population_density', label: 'Density'    },
               { value: 'turnout',            label: 'Turnout'    },

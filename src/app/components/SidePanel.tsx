@@ -53,12 +53,16 @@ interface SidePanelProps {
   currentZoom: number;
   currentLayer: string;
   loadingStatus: string;
-  algorithm: 'random-initialization' | 'pop-balance';
-  onAlgorithmChange: (algorithm: 'random-initialization' | 'pop-balance') => void;
+  algorithm: 'random-initialization' | 'minimize-county-splits' | 'pop-balance' | 'anneal' | 'equalize-exact' | 'debug-equalization-graph';
+  onAlgorithmChange: (algorithm: 'random-initialization' | 'minimize-county-splits' | 'pop-balance' | 'anneal' | 'equalize-exact' | 'debug-equalization-graph') => void;
   popTolerance: number;
   onPopToleranceChange: (value: number) => void;
   popIterations: number;
   onPopIterationsChange: (value: number) => void;
+  annealIterations: number;
+  onAnnealIterationsChange: (value: number) => void;
+  annealObjectives: string[];
+  onAnnealObjectivesChange: (objectives: string[]) => void;
   automationRunning: boolean;
   onRunAutomation: () => void;
   onExportPlan: () => void;
@@ -92,6 +96,10 @@ export function SidePanel(props: SidePanelProps) {
     onPopToleranceChange,
     popIterations,
     onPopIterationsChange,
+    annealIterations,
+    onAnnealIterationsChange,
+    annealObjectives,
+    onAnnealObjectivesChange,
     automationRunning,
     onRunAutomation,
     onExportPlan,
@@ -125,7 +133,8 @@ export function SidePanel(props: SidePanelProps) {
         if (typeof a === 'string') return a;
         try { return JSON.stringify(a); } catch { return String(a); }
       }).join(' ');
-      const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const _now = new Date();
+      const time = _now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + String(_now.getMilliseconds()).padStart(3, '0');
       setConsoleLogs(prev => {
         const next = [...prev, { level, message, time }];
         return next.length > MAX ? next.slice(next.length - MAX) : next;
@@ -208,11 +217,11 @@ export function SidePanel(props: SidePanelProps) {
                     <th className="relative text-right py-1 pl-3 pr-6 font-medium w-1/4">
                       <div className="flex justify-end">
                         <CustomSelect
-                          value={districtColorMetric}
+                          value={districtColorMetric === 'default' || districtColorMetric === 'deviation' ? 'default' : districtColorMetric}
                           onChange={onDistrictColorMetricChange}
                           dropdownAlign="right"
                           options={[
-                            { value: 'default',            label: 'Color'      },
+                            { value: 'default',            label: 'Metric'     },
                             { value: 'partisan',           label: 'Partisan'   },
                             { value: 'population_density', label: 'Density'    },
                             { value: 'turnout',            label: 'Turnout'    },
@@ -525,20 +534,30 @@ export function SidePanel(props: SidePanelProps) {
                 <select
                   id="algorithm-select"
                   value={algorithm}
-                  onChange={(e) => onAlgorithmChange(e.target.value as 'random-initialization' | 'pop-balance')}
+                  onChange={(e) => onAlgorithmChange(e.target.value as 'random-initialization' | 'minimize-county-splits' | 'pop-balance' | 'anneal' | 'equalize-exact' | 'debug-equalization-graph')}
                   className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
                 >
                   <option value="random-initialization">Random initialization</option>
+                  <option value="minimize-county-splits">Minimize county splits</option>
                   <option value="pop-balance">Population balance</option>
+                  <option value="anneal">Simulated annealing</option>
                   <option value="shortest-splitline" disabled>Shortest Splitline</option>
                   <option value="compact-districts" disabled>Compact Districts</option>
                   <option value="population-equality" disabled>Population Equality</option>
+                  <option value="equalize-exact">Exact equalization</option>
+                  <option value="debug-equalization-graph">Debug: Equalization Graph</option>
                 </select>
               </div>
 
               {algorithm === 'random-initialization' && (
                 <div className="text-sm text-muted-foreground">
                   No parameters for this method.
+                </div>
+              )}
+
+              {algorithm === 'minimize-county-splits' && (
+                <div className="text-sm text-muted-foreground">
+                  Builds a random spanning tree weighted to prefer intra-county edges, then cuts it into districts sized by population. No parameters.
                 </div>
               )}
 
@@ -590,13 +609,62 @@ export function SidePanel(props: SidePanelProps) {
                 </>
               )}
 
+              {algorithm === 'anneal' && (
+                <>
+                  <div>
+                    <Label className="mb-2 block">Objectives</Label>
+                    {[
+                      { key: 'population',  label: 'Population equality' },
+                      { key: 'compactness', label: 'Compactness (Polsby-Popper)' },
+                      { key: 'competitive', label: 'Competitiveness' },
+                    ].map(({ key, label }) => (
+                      <label key={key} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={annealObjectives.includes(key)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              onAnnealObjectivesChange([...annealObjectives, key]);
+                            } else {
+                              onAnnealObjectivesChange(annealObjectives.filter(o => o !== key));
+                            }
+                          }}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Iterations</Label>
+                      <span className="text-sm text-muted-foreground">
+                        {Math.round(annealIterations).toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={valueToLogSlider(annealIterations, 10_000, 2_000_000)}
+                      onChange={(e) => {
+                        const t = Number(e.target.value);
+                        onAnnealIterationsChange(Math.round(logSliderToValue(t, 10_000, 2_000_000)));
+                      }}
+                      className="w-full h-2 bg-muted rounded-lg cursor-pointer accent-primary"
+                    />
+                  </div>
+                </>
+              )}
+
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1"
-                  disabled={automationRunning || !workerReady}
+                  disabled={automationRunning || !workerReady || (algorithm === 'anneal' && annealObjectives.length === 0)}
                   onClick={onRunAutomation}
                 >
-                  {automationRunning ? 'Running...' : 'Generate'}
+                  {automationRunning ? 'Running...' : algorithm === 'anneal' ? 'Optimize' : 'Run'}
                 </Button>
               </div>
 
@@ -620,7 +688,7 @@ export function SidePanel(props: SidePanelProps) {
                       entry.level === 'warn'  ? 'text-yellow-600' :
                       'text-foreground'
                     }>
-                      <span className="text-muted-foreground select-none">{entry.time} </span>
+                      <span className="text-muted-foreground">{entry.time} </span>
                       {entry.message}
                     </div>
                   ))}

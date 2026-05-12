@@ -42,6 +42,45 @@ export class WasmPlan {
     all_part_totals(series: string): any;
     anneal_balance(series: string, max_iter: number, initial_temp: number, final_temp: number, boundary_factor: number): void;
     /**
+     * Run a chunk of annealing iterations at a given temperature with geometric cooling.
+     * Returns `{ new_temp, avg_prob, any_accepted }` so the caller can manage the schedule.
+     *
+     * Config format (subset of anneal_from_json):
+     * ```json
+     * { "objectives": [...], "phase_cooling_rates": [0.001], "batch_size": 1000 }
+     * ```
+     */
+    anneal_chunk_from_json(config_json: string, temperature: number): any;
+    /**
+     * Run simulated annealing optimization with a JSON config.
+     *
+     * Config format:
+     * ```json
+     * {
+     *   "objectives": [{ "metrics": [{ "type": "PopulationDeviationSmooth", "pop_series": "T_20_CENS_Total" }], "weights": [1.0] }],
+     *   "max_iter": 500000,
+     *   "init_temp": 1.0,
+     *   "phase_start_probs": [0.8],
+     *   "phase_end_probs": [null],
+     *   "phase_cooling_rates": [0.001],
+     *   "early_stop_iters": 100000,
+     *   "temp_search_batch_size": 1000,
+     *   "batch_size": 1000
+     * }
+     * ```
+     */
+    anneal_from_json(config_json: string): void;
+    /**
+     * Tune temperature via binary search until average acceptance probability reaches `target_prob`.
+     * Returns the tuned temperature. Runs blocking (fast: ~10-20 batches).
+     *
+     * Config format (subset of anneal_from_json):
+     * ```json
+     * { "objectives": [...], "init_temp": 1.0, "phase_start_probs": [0.8], "temp_search_batch_size": 1000 }
+     * ```
+     */
+    anneal_tune_temp_from_json(config_json: string): number;
+    /**
      * Assign all blocks belonging to a geographic unit to a given district.
      * `layer`: geographic level ("block", "vtd", "tract", "county", etc.)
      * `geo_id`: FIPS identifier for the unit at that level.
@@ -75,6 +114,17 @@ export class WasmPlan {
     district_totals(series: string): any;
     equalize(series: string, tolerance: number, max_iter: number): void;
     /**
+     * Perform exact population equalization using ILP block swaps.
+     * Returns the number of blocks moved.
+     */
+    equalize_exact(series: string): number;
+    /**
+     * Build the equalization graph and spanning tree for the current partition.
+     * Prints all edges and feasible net_flows to the browser console, and
+     * returns a one-line summary string.  Intended for development/debugging.
+     */
+    equalize_exact_debug(series: string): string;
+    /**
      * Run one outer iteration of equalization. Returns `true` if converged.
      */
     equalize_step(series: string, tolerance: number): boolean;
@@ -85,6 +135,7 @@ export class WasmPlan {
     constructor(map: WasmMap, num_districts: number);
     num_districts(): number;
     randomize(): void;
+    randomize_minimize_county_splits(series: string): void;
     recombine(a: number, b: number): void;
     /**
      * Series available in the map's weights.
@@ -121,6 +172,9 @@ export interface InitOutput {
     readonly __wbg_wasmplan_free: (a: number, b: number) => void;
     readonly wasmplan_all_part_totals: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmplan_anneal_balance: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+    readonly wasmplan_anneal_chunk_from_json: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly wasmplan_anneal_from_json: (a: number, b: number, c: number) => [number, number];
+    readonly wasmplan_anneal_tune_temp_from_json: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmplan_assign_unit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly wasmplan_assign_units_batch: (a: number, b: number, c: number, d: any, e: number) => [number, number];
     readonly wasmplan_assignments_dict: (a: number) => [number, number, number];
@@ -128,11 +182,14 @@ export interface InitOutput {
     readonly wasmplan_district_geometries_wkb: (a: number) => [number, number, number];
     readonly wasmplan_district_totals: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmplan_equalize: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmplan_equalize_exact: (a: number, b: number, c: number) => [number, number, number];
+    readonly wasmplan_equalize_exact_debug: (a: number, b: number, c: number) => [number, number, number, number];
     readonly wasmplan_equalize_step: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly wasmplan_load_csv_text: (a: number, b: number, c: number) => [number, number];
     readonly wasmplan_new: (a: number, b: number) => [number, number, number];
     readonly wasmplan_num_districts: (a: number) => number;
     readonly wasmplan_randomize: (a: number) => [number, number];
+    readonly wasmplan_randomize_minimize_county_splits: (a: number, b: number, c: number) => [number, number];
     readonly wasmplan_recombine: (a: number, b: number, c: number) => [number, number];
     readonly wasmplan_series: (a: number) => [number, number, number];
     readonly wasmplan_set_assignments_u32: (a: number, b: any) => [number, number];

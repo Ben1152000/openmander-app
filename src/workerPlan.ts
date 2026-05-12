@@ -115,8 +115,20 @@ export class WorkerPlan {
     return this.call('stats', { type: 'randomize' });
   }
 
+  randomizeMinimizeCountySplits(series: string): Promise<void> {
+    return this.call('stats', { type: 'randomize-minimize-county-splits', series });
+  }
+
   equalize(series: string, tolerance: number, maxIter: number, chunkSize?: number): Promise<void> {
     return this.call('stats', { type: 'equalize', series, tolerance, maxIter, chunkSize });
+  }
+
+  equalizeExact(series: string): Promise<void> {
+    return this.call('stats', { type: 'equalize-exact', series });
+  }
+
+  debugEqualizationGraph(series: string): Promise<void> {
+    return this.call('stats', { type: 'debug-equalization-graph', series });
   }
 
   computeGeometries(): Promise<void> {
@@ -135,6 +147,10 @@ export class WorkerPlan {
   /// More efficient than calling assignUnit repeatedly: geometry/stats recompute only once.
   assignUnitsBatch(layer: string, geoIds: string[], district: number): Promise<void> {
     return this.call('stats', { type: 'assign-units-batch', layer, geoIds, district });
+  }
+
+  anneal(configJson: string): Promise<void> {
+    return this.call('stats', { type: 'anneal', configJson });
   }
 
   setAssignments(data: Uint32Array): Promise<void> {

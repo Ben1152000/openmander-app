@@ -3,13 +3,13 @@ import type { Map as MaplibreMap } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
 import {
   rampColor,
-  partisanStepColor, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, UNIT_GRAY_FILL,
+  partisanStepColor, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, DEVIATION_COLOR_RAMP, UNIT_GRAY_FILL,
   hexToRgb, ETH_COLORS,
 } from '@/app/constants/colors';
 import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, SCALAR_TRANSFORMS, ethCatFromStat } from '@/app/constants/metrics';
 import type { DistrictStat, EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
 
-type ColorMetric = 'default' | 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
+type ColorMetric = 'default' | 'partisan' | 'deviation' | ScalarMetric | EthnicityMetric | EthStatusMetric;
 const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
 
 // Fixed fill-color expression for district polygons — never changes, so MapLibre
@@ -112,8 +112,9 @@ export function useVisualizationPaint(params: {
     }
 
     // --- Base layer coloring ---
-    // useMetricFeatureState owns fill-color for non-default metrics; skip here.
-    if (districtColorMetric !== 'default') return;
+    // useMetricFeatureState owns fill-color for unit-level metrics; skip here.
+    // 'deviation' is district-level only and handled like 'default' for units.
+    if (districtColorMetric !== 'default' && districtColorMetric !== 'deviation') return;
     // District view: gray fills. Map view: transparent (no district colors shown).
     const paint = visualizationMode === 'districts' ? UNIT_GRAY_FILL : 'rgba(0,0,0,0)';
     for (const name of ALL_LAYERS) {
@@ -143,6 +144,12 @@ export function useVisualizationPaint(params: {
 
       if (districtColorMetric === 'partisan') {
         hex = partisanStepColor(feature.properties!.partisanLean as number);
+      } else if (districtColorMetric === 'deviation') {
+        const stat = statsMap.get(district);
+        if (stat) {
+          const t = Math.max(-1, Math.min(1, stat.deviation / 100));
+          hex = rampColor(t, DEVIATION_COLOR_RAMP);
+        } else hex = '#888888';
       } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
         const stat = statsMap.get(district);
         if (stat) {

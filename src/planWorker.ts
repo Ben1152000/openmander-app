@@ -4,9 +4,11 @@
 // Messages in:
 //   { type: 'init', packFiles: Record<string, Uint8Array>, numDistricts: number }
 //   { type: 'randomize' }
+//   { type: 'randomize-minimize-county-splits', series: string }
 //   { type: 'equalize', series: string, tolerance: number, maxIter: number, chunkSize?: number }
 //   { type: 'compute-geometries' }
 //   { type: 'assign-unit', layer: string, geoId: string, district: number }
+//   { type: 'anneal', configJson: string }
 //
 // Messages out:
 //   { type: 'ready' }                                          — init complete
@@ -162,11 +164,14 @@ self.onmessage = async (e: MessageEvent) => {
   const msg = e.data as
     | { type: 'init'; packFiles: Record<string, Uint8Array>; numDistricts: number }
     | { type: 'randomize' }
+    | { type: 'randomize-minimize-county-splits'; series: string }
     | { type: 'equalize'; series: string; tolerance: number; maxIter: number; chunkSize?: number }
+    | { type: 'debug-equalization-graph'; series: string }
     | { type: 'compute-geometries' }
     | { type: 'assign-unit'; layer: string; geoId: string; district: number }
     | { type: 'assign-units-batch'; layer: string; geoIds: string[]; district: number }
-    | { type: 'set-assignments'; data: Uint32Array };
+    | { type: 'set-assignments'; data: Uint32Array }
+    | { type: 'anneal'; configJson: string; };
 
   try {
     if (msg.type === 'init') {
@@ -196,6 +201,18 @@ self.onmessage = async (e: MessageEvent) => {
 
       log('[Worker] Randomizing...');
       wasmPlan.randomize();
+      log('[Worker] Randomize done');
+
+      const assignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: assignments, done: true }, [assignments.buffer]);
+      sendGeometries();
+      sendStats();
+
+    } else if (msg.type === 'randomize-minimize-county-splits') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+
+      log('[Worker] Randomizing (minimize county splits)...');
+      (wasmPlan as any).randomize_minimize_county_splits(msg.series);
       log('[Worker] Randomize done');
 
       const assignments = new Uint32Array(wasmPlan.assignments_u32());
@@ -234,6 +251,23 @@ self.onmessage = async (e: MessageEvent) => {
         await new Promise<void>(r => setTimeout(r, 0));
       }
 
+    } else if (msg.type === 'equalize-exact') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+      log('[Worker] Running exact equalization...');
+      const blocksMoved: number = (wasmPlan as any).equalize_exact(msg.series);
+      log(`[Worker] Exact equalization complete: ${blocksMoved} block(s) moved`);
+      const assignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: assignments, done: true }, [assignments.buffer]);
+      sendGeometries();
+      sendStats();
+
+    } else if (msg.type === 'debug-equalization-graph') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+      log('[Worker] Building equalization graph...');
+      const summary: string = (wasmPlan as any).equalize_exact_debug(msg.series);
+      log(`[Worker] ${summary}`);
+      sendStats();
+
     } else if (msg.type === 'compute-geometries') {
       sendGeometries();
       sendStats();
@@ -255,6 +289,45 @@ self.onmessage = async (e: MessageEvent) => {
       (self as any).postMessage({ type: 'assignments', data: unitAssignments, done: false }, [unitAssignments.buffer]);
       sendGeometries();
       sendStats();
+
+    } else if (msg.type === 'anneal') {
+      if (!wasmPlan) throw new Error('Worker not initialized');
+      const config = JSON.parse(msg.configJson);
+      const earlyStopIters: number = config.early_stop_iters ?? 100000;
+      const batchSize: number = config.batch_size ?? 1000;
+
+      // Phase 1: temperature tuning (blocking, ~10-20 batches)
+      log('[Worker] Annealing: tuning temperature...');
+      let temperature: number = (wasmPlan as any).anneal_tune_temp_from_json(msg.configJson);
+      log(`[Worker] Tuned temperature: ${temperature}`);
+
+      // Send intermediate state after tuning so the map updates
+      const tuneAssignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: tuneAssignments, done: false }, [tuneAssignments.buffer]);
+      sendGeometries();
+      await new Promise<void>(r => setTimeout(r, 0));
+
+      // Phase 2: cooling loop, chunked with UI updates between each batch
+      let itersSinceChange = 0;
+      while (true) {
+        const result: { new_temp: number; avg_prob: number; any_accepted: boolean } =
+          (wasmPlan as any).anneal_chunk_from_json(msg.configJson, temperature);
+        temperature = result.new_temp;
+
+        if (result.any_accepted) { itersSinceChange = 0; }
+        else { itersSinceChange += batchSize; }
+
+        const done = itersSinceChange >= earlyStopIters;
+        const coolAssignments = new Uint32Array(wasmPlan.assignments_u32());
+        (self as any).postMessage({ type: 'assignments', data: coolAssignments, done }, [coolAssignments.buffer]);
+        sendGeometries();
+        if (done) sendStats();
+
+        if (done) break;
+        await new Promise<void>(r => setTimeout(r, 0));
+      }
+
+      log('[Worker] Anneal complete');
 
     } else if (msg.type === 'assign-units-batch') {
       if (!wasmPlan) throw new Error('Worker not initialized');

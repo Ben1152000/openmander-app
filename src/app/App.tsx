@@ -148,9 +148,12 @@ export default function App() {
 
   // Automation settings
   const [automationRunning, setAutomationRunning] = useState(false);
-  const [algorithm, setAlgorithm] = useState<'random-initialization' | 'pop-balance'>('random-initialization');
+  const automationRunningRef = useRef(false);
+  const [algorithm, setAlgorithm] = useState<'random-initialization' | 'minimize-county-splits' | 'pop-balance' | 'anneal' | 'equalize-exact' | 'debug-equalization-graph'>('random-initialization');
   const [popTolerance, setPopTolerance] = useState(0.0001);
   const [popIterations, setPopIterations] = useState(300);
+  const [annealIterations, setAnnealIterations] = useState(500_000);
+  const [annealObjectives, setAnnealObjectives] = useState<string[]>(['population']);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'analysis' | 'debug'>('summary');
@@ -305,7 +308,7 @@ export default function App() {
 
   useMetricFeatureState({
     mapRef,
-    mapInitialized: mapInitialized && districtColorMetric !== 'default',
+    mapInitialized: mapInitialized && districtColorMetric !== 'default' && districtColorMetric !== 'deviation',
     sourcesVersion,
     visualizationMode,
     districtColorMetric: districtColorMetric as any,
@@ -342,7 +345,7 @@ export default function App() {
             assignmentsRef.current = dict;
             setDistrictCounts(counts);
           }
-          setLoadingStatus('');
+          if (!automationRunningRef.current) setLoadingStatus('');
         }
       },
       onReady: (geoIdIndex) => {
@@ -477,13 +480,43 @@ export default function App() {
 
   const handleRunAutomation = () => {
     if (!workerReadyRef.current || !planRef.current) return;
-    setLoadingStatus('Creating plan...');
+    setLoadingStatus('Running...');
     setAutomationRunning(true);
-    const done = () => setAutomationRunning(false);
+    automationRunningRef.current = true;
+    const done = () => { automationRunningRef.current = false; setAutomationRunning(false); setLoadingStatus(''); };
     if (algorithm === 'random-initialization') {
       planRef.current.randomize().then(done, done);
+    } else if (algorithm === 'minimize-county-splits') {
+      planRef.current.randomizeMinimizeCountySplits('T_20_CENS_Total').then(done, done);
     } else if (algorithm === 'pop-balance') {
       planRef.current.equalize('T_20_CENS_Total', popTolerance, popIterations).then(done, done);
+    } else if (algorithm === 'anneal') {
+      const metrics = annealObjectives.map(obj => {
+        if (obj === 'population')   return { type: 'PopulationDeviationSmooth', pop_series: 'T_20_CENS_Total' };
+        if (obj === 'compactness')  return { type: 'CompactnessPolsbyPopper' };
+        if (obj === 'competitive')  return { type: 'CompetitivenessGaussian', dem_series: 'E_20_PRES_Dem', rep_series: 'E_20_PRES_Rep', sigma: 0.1 };
+        return null;
+      }).filter(Boolean);
+      const annealConfig = {
+        objectives: [{ metrics, weights: metrics.map(() => 1.0) }],
+        max_iter: annealIterations,
+        init_temp: 1.0,
+        phase_start_probs: [0.8],
+        phase_end_probs: [null],
+        phase_cooling_rates: [0.001],
+        early_stop_iters: 100000,
+        temp_search_batch_size: 1000,
+        batch_size: 1000,
+      };
+      const isEmpty = !districtStats?.some(d => d.population > 0);
+      const preStep = isEmpty
+        ? planRef.current.randomize().then(() => planRef.current!.equalize('T_20_CENS_Total', 0.01, 500))
+        : Promise.resolve();
+      preStep.then(() => planRef.current!.anneal(JSON.stringify(annealConfig))).then(done, done);
+    } else if (algorithm === 'equalize-exact') {
+      planRef.current.equalizeExact('T_20_CENS_Total').then(done, done);
+    } else if (algorithm === 'debug-equalization-graph') {
+      planRef.current.debugEqualizationGraph('T_20_CENS_Total').then(done, done);
     }
   };
 
@@ -644,6 +677,10 @@ export default function App() {
     onPopToleranceChange: setPopTolerance,
     popIterations,
     onPopIterationsChange: setPopIterations,
+    annealIterations,
+    onAnnealIterationsChange: setAnnealIterations,
+    annealObjectives,
+    onAnnealObjectivesChange: setAnnealObjectives,
     automationRunning,
     onRunAutomation: handleRunAutomation,
     onExportPlan: handleExportPlan,

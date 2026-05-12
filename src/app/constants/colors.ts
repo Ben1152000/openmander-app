@@ -103,6 +103,14 @@ export function partisanStepColor(lean: number): string {
   return PARTISAN_STEPS[0][1];
 }
 
+// --- Deviation ramp (input = deviation fraction clamped to [−1, +1]; 0 = ideal) ---
+// Red = underpopulated (−100%), white = on target, green = overpopulated (+100%).
+export const DEVIATION_COLOR_RAMP: [number, string][] = [
+  [-1.0, '#dd2222'],
+  [ 0.0, '#ffffff'],
+  [ 1.0, '#22aa44'],
+];
+
 // --- Turnout ramp (input = raw fraction 0–1, no transform) ---
 // Warm gold → teal pivot at 50% → cool blue. Steps concentrated in the 30–70% typical range.
 export const TURNOUT_COLOR_RAMP: [number, string][] = [
