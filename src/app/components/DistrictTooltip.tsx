@@ -1,7 +1,7 @@
 import { Fragment, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { DistrictStat, EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
-import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, SCALAR_TRANSFORMS, ethCatFromStat, ETH_CAT_LABELS } from '@/app/constants/metrics';
+import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, SCALAR_TRANSFORMS, ethCatFromStat, ethCatFullLabel } from '@/app/constants/metrics';
 import { districtColor, partisanStepColor, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, ETH_COLORS, rampColor } from '@/app/constants/colors';
 
 interface DistrictTooltipProps {
@@ -73,7 +73,7 @@ export function DistrictTooltip({ district, x, y, districtStats, districtColorMe
 
     let censusHeader = censusNameRef.current || 'Census';
     if (metric === 'ethnicity') {
-      censusHeader = `${censusHeader} · ${ETH_CAT_LABELS[ethCatFromStat(stat)] ?? '—'}`;
+      censusHeader = `${censusHeader} · ${ethCatFullLabel(ethCatFromStat(stat))}`;
     }
     sections.push({ header: censusHeader, rows: censusRows });
 

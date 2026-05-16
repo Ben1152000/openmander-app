@@ -7,6 +7,8 @@ export interface CustomSelectOption {
   label: string;
   /** Shorter label shown in the trigger button; falls back to label. */
   buttonLabel?: string;
+  /** If set, renders a section header above this option. */
+  group?: string;
 }
 
 export function CustomSelect({ value, onChange, options, prefix, dropdownAlign = 'left' }: {
@@ -61,16 +63,22 @@ export function CustomSelect({ value, onChange, options, prefix, dropdownAlign =
         <ChevronDown className="w-3 h-3 text-gray-400" />
       </button>
       {open && (
-        <div ref={dropdownRef} className={`absolute top-full bg-gray-100 rounded-lg shadow-xl border border-gray-200 p-1 z-50 flex flex-col min-w-full ${dropdownAlign === 'right' ? 'right-0' : 'left-0'}`}>
-          {options.map(o => (
-            <button
-              key={o.value}
-              className="flex items-center gap-1.5 text-left pl-2 pr-4 py-0.5 text-sm font-normal whitespace-nowrap hover:bg-blue-500 hover:text-white rounded text-gray-700"
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
-              <Check className={`w-3 h-3 shrink-0 ${value === o.value ? 'opacity-100' : 'opacity-0'}`} />
-              {o.label}
-            </button>
+        <div ref={dropdownRef} className={`absolute top-full mt-1 bg-gray-100 rounded-lg shadow-xl border border-gray-200 p-1 z-50 flex flex-col min-w-full ${dropdownAlign === 'right' ? 'right-0' : 'left-0'}`}>
+          {options.map((o, i) => (
+            <div key={o.value}>
+              {o.group && (
+                <div className={`flex items-center gap-1.5 px-2 ${i > 0 ? 'mt-1 pt-1 border-t border-gray-300' : ''}`}>
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap">{o.group}</span>
+                </div>
+              )}
+              <button
+                className="flex items-center gap-1.5 text-left pl-2 pr-4 py-0.5 text-sm font-normal whitespace-nowrap hover:bg-blue-500 hover:text-white rounded text-gray-700 w-full"
+                onClick={() => { onChange(o.value); setOpen(false); }}
+              >
+                <Check className={`w-3 h-3 shrink-0 ${value === o.value ? 'opacity-100' : 'opacity-0'}`} />
+                {o.label}
+              </button>
+            </div>
           ))}
         </div>
       )}

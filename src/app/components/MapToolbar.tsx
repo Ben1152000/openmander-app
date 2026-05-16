@@ -38,6 +38,10 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
     { value: 'block',        label: 'Block',    minZoom: ZOOM_THRESHOLD_VTD_TO_BLOCK },
   ];
 
+  const activeLayerLabel = layerOverride
+    ? LAYER_OPTIONS.find(o => o.value === layerOverride)?.label ?? 'Unit'
+    : [...LAYER_OPTIONS].reverse().find(o => currentZoom >= o.minZoom)?.label ?? 'County';
+
   const hasRanges = Object.keys(layerZoomRanges).length > 0;
   const availableOptions = LAYER_OPTIONS.filter(o => {
     if (hasRanges) {
@@ -90,7 +94,7 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
                   : <Paintbrush className={`w-3.5 h-3.5 ${innerColor}`} />}
               </div>
             </div>
-          ), 'Box select');
+          ), activeDistrict === 0 ? 'Box erase' : 'Box paint');
         })()}
       </div>
 
@@ -125,9 +129,9 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
             value={districtColorMetric}
             onChange={onDistrictColorMetricChange}
             options={[
-              { value: 'default',            label: 'Color'      },
+              { value: 'default',            label: 'Color',          group: 'District' },
               { value: 'deviation',          label: 'Deviation'  },
-              { value: 'partisan',           label: 'Partisan'   },
+              { value: 'partisan',           label: 'Partisan',       group: activeLayerLabel },
               { value: 'population_density', label: 'Density'    },
               { value: 'turnout',            label: 'Turnout'    },
               { value: 'ethnicity',          label: 'Ethnicity'  },

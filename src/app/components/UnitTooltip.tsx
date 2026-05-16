@@ -1,7 +1,7 @@
 import { Fragment, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import type { EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
-import { ETHNICITY_METRICS, ethCatFromPcts, ETH_CAT_LABELS } from '@/app/constants/metrics';
+import { ETHNICITY_METRICS, ethCatFromPcts, ethCatFullLabel } from '@/app/constants/metrics';
 
 interface UnitTooltipProps {
   geoId: string;
@@ -72,7 +72,7 @@ export function UnitTooltip({
       const white = ethnicityDataRef.current['white_pct']?.[geoId] ?? -1;
       const nwPcts = (['black_pct', 'hispanic_pct', 'asian_pct', 'native_pct', 'pacific_pct'] as EthnicityMetric[])
         .map(k => ethnicityDataRef.current[k]?.[geoId] ?? -1);
-      censusRows.push({ label: 'Category', count: ETH_CAT_LABELS[ethCatFromPcts(white, nwPcts)] ?? '—' });
+      censusRows.push({ label: 'Category', count: ethCatFullLabel(ethCatFromPcts(white, nwPcts)) });
     }
   }
 
@@ -81,7 +81,7 @@ export function UnitTooltip({
     const white = ethnicityDataRef.current['white_pct']?.[geoId] ?? -1;
     const nwPcts = (['black_pct', 'hispanic_pct', 'asian_pct', 'native_pct', 'pacific_pct'] as EthnicityMetric[])
       .map(k => ethnicityDataRef.current[k]?.[geoId] ?? -1);
-    censusHeader = `${censusHeader} · ${ETH_CAT_LABELS[ethCatFromPcts(white, nwPcts)] ?? '—'}`;
+    censusHeader = `${censusHeader} · ${ethCatFullLabel(ethCatFromPcts(white, nwPcts))}`;
   }
 
   if (censusRows.length > 0) sections.push({ header: censusHeader, rows: censusRows });

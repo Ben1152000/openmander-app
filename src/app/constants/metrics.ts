@@ -102,15 +102,6 @@ export function ethCatFromStat(d: DistrictStat): number {
  * Plurality or mixed: "Mixed".
  * Zero population: "—".
  */
-export function ethCatShortLabel(cat: number): string {
-  if (cat === 0) return '—';
-  if (cat >= 1  && cat <= 5)  return `${NON_WHITE_GROUPS[cat - 1].label} Maj.`;
-  if (cat === 6)               return 'White Maj.';
-  if (cat >= 7  && cat <= 11) return `${NON_WHITE_GROUPS[cat - 7].label} Maj.`;
-  if (cat === 12)              return 'White Maj.';
-  return 'Mixed';
-}
-
 /** Human-readable label for an eth_cat value. */
 export const ETH_CAT_LABELS: Record<number, string> = {
   0:  '—',
@@ -127,3 +118,22 @@ export const NON_WHITE_GROUPS: { key: EthnicityMetric; label: string }[] = [
   { key: 'native_pct',   label: 'Native'   },
   { key: 'pacific_pct',  label: 'Pacific'  },
 ];
+
+const ALL_GROUPS = [...NON_WHITE_GROUPS, { label: 'White' }];
+const ETH_TIER_LABELS = ['Dominant', 'Majority', 'Plurality'];
+
+export function ethCatFullLabel(cat: number): string {
+  if (cat === 0) return '—';
+  const tier = Math.floor((cat - 1) / 6);
+  const group = ALL_GROUPS[(cat - 1) % 6];
+  return `${group.label} ${ETH_TIER_LABELS[tier]}`;
+}
+
+export function ethCatShortLabel(cat: number): string {
+  if (cat === 0) return '—';
+  if (cat >= 1  && cat <= 5)  return `${NON_WHITE_GROUPS[cat - 1].label} Maj.`;
+  if (cat === 6)               return 'White Maj.';
+  if (cat >= 7  && cat <= 11) return `${NON_WHITE_GROUPS[cat - 7].label} Maj.`;
+  if (cat === 12)              return 'White Maj.';
+  return 'Mixed';
+}
