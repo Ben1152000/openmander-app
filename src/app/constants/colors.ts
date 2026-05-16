@@ -1,5 +1,9 @@
 import type { EthnicityMetric, ScalarMetric } from './metrics';
 
+// --- Unit outline style ---
+export const OUTLINE_WIDTH = 0.75;
+export const OUTLINE_OPACITY = 0.5;
+
 // --- Partisan colors ---
 
 export const PARTISAN_DEM_CLASS = 'text-blue-600';

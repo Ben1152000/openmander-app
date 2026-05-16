@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { Map } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
 import { STATE_CONFIGS, getLayerForZoom } from '@/app/constants/config';
-import { districtColor } from '@/app/constants/colors';
+import { districtColor, OUTLINE_WIDTH } from '@/app/constants/colors';
 
 const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
 
@@ -79,7 +79,7 @@ export function useMapLayers(params: {
       };
 
       const linePaint: any = {
-        'line-width': 1.0,
+        'line-width': OUTLINE_WIDTH,
         'line-color': 'rgba(0,0,0,0.7)',
         'line-opacity': 0,
         'line-opacity-transition': { duration: 0 },

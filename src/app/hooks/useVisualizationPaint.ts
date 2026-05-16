@@ -4,7 +4,7 @@ import type { MutableRefObject } from 'react';
 import {
   rampColor,
   partisanStepColor, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS, DEVIATION_COLOR_RAMP, UNIT_GRAY_FILL,
-  hexToRgb, ETH_COLORS,
+  hexToRgb, ETH_COLORS, OUTLINE_OPACITY,
 } from '@/app/constants/colors';
 import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, SCALAR_TRANSFORMS, ethCatFromStat } from '@/app/constants/metrics';
 import type { DistrictStat, EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
@@ -33,12 +33,13 @@ export function useVisualizationPaint(params: {
   districtStats: DistrictStat[] | null;
   currentLayer: string;
   activeLayerRef: MutableRefObject<string>;
+  showOutlinesRef: MutableRefObject<boolean>;
 }) {
   const {
     mapRef, mapInitialized, sourcesVersion,
     visualizationMode, visualizationModeRef, districtColorMetric,
     districtGeoJson, districtStats, currentLayer,
-    activeLayerRef,
+    activeLayerRef, showOutlinesRef,
   } = params;
 
   // Stable refs for district layers, managed entirely within this effect
@@ -120,7 +121,7 @@ export function useVisualizationPaint(params: {
     for (const name of ALL_LAYERS) {
       if (map.getLayer(`units-${name}-fill`)) map.setPaintProperty(`units-${name}-fill`, 'fill-color', paint);
       if (map.getLayer(`units-${name}-line`)) {
-        map.setPaintProperty(`units-${name}-line`, 'line-opacity', name === activeLayerRef.current ? 0.5 : 0);
+        map.setPaintProperty(`units-${name}-line`, 'line-opacity', name === activeLayerRef.current && showOutlinesRef.current ? OUTLINE_OPACITY : 0);
       }
     }
   }, [visualizationMode, districtColorMetric, mapInitialized, districtGeoJson, sourcesVersion, currentLayer]); // eslint-disable-line react-hooks/exhaustive-deps

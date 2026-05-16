@@ -9,7 +9,7 @@ import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import type { DistrictStat } from '@/app/constants/metrics';
-import { ethCatFromStat, ETH_CAT_LABELS } from '@/app/constants/metrics';
+import { ethCatFromStat, ethCatShortLabel } from '@/app/constants/metrics';
 import type { RegionStats } from '@/app/hooks/useDistrictData';
 import { partisanLeanClass, partisanLeanLabel, deviationClass } from '@/app/constants/colors';
 import { RankVotesChart } from './RankVotesChart';
@@ -275,7 +275,7 @@ export function SidePanel(props: SidePanelProps) {
                         case 'ethnicity': {
                           const cat = ethCatFromStat(d);
                           const isWhite = cat === 0 || cat === 6 || cat === 12 || cat === 18;
-                          return { label: ETH_CAT_LABELS[cat] ?? '—', className: isWhite ? 'text-muted-foreground' : '' };
+                          return { label: ethCatShortLabel(cat), className: isWhite ? 'text-muted-foreground' : '' };
                         }
                         default: return { label: '—', className: 'text-muted-foreground' };
                       }

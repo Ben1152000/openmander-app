@@ -320,7 +320,8 @@ export class WasmPlan {
     }
     /**
      * Perform exact population equalization using ILP block swaps.
-     * Returns the number of blocks moved.
+     * Returns the number of blocks moved (fallback edge count is not
+     * exposed in the WASM binding).
      * @param {string} series
      * @returns {number}
      */

@@ -13,6 +13,7 @@ import {
   DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
   ZOOM_THRESHOLD_VTD_TO_BLOCK, midZoomLayer, isPolarState, POLAR_ZOOM_OFFSET,
 } from './constants/config';
+import { OUTLINE_OPACITY } from './constants/colors';
 import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from './constants/metrics';
 import { useSidebarResize } from './hooks/useSidebarResize';
 import { usePackLoader } from './hooks/usePackLoader';
@@ -146,6 +147,11 @@ export default function App() {
   const districtColorMetricRef = useRef<string>('default');
   districtColorMetricRef.current = districtColorMetric;
 
+  // Unit outline visibility
+  const [showOutlines, setShowOutlines] = useState(true);
+  const showOutlinesRef = useRef(true);
+  showOutlinesRef.current = showOutlines;
+
   // Automation settings
   const [automationRunning, setAutomationRunning] = useState(false);
   const automationRunningRef = useRef(false);
@@ -211,13 +217,26 @@ export default function App() {
       }
       if (map.getLayer(`units-${name}-line`)) {
         map.setLayoutProperty(`units-${name}-line`, 'visibility', visible ? 'visible' : 'none');
-        const lineOpacity = !isActive || visualizationModeRef.current === 'map' || districtColorMetricRef.current !== 'default' ? 0 : 0.5;
+        const lineOpacity = !isActive || !showOutlinesRef.current ? 0 : OUTLINE_OPACITY;
         map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
       }
     }
     setActiveLayer(targetLayer);
     setCurrentLayer(targetLayer);
   }, [layerOverride, mapInitialized, sourcesVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Imperatively update unit outline opacity when the showOutlines toggle changes.
+  useEffect(() => {
+    if (!mapRef.current || !mapInitialized || sourcesVersion === 0) return;
+    const map = mapRef.current;
+    const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
+    for (const name of allLayers) {
+      if (!map.getLayer(`units-${name}-line`)) continue;
+      const isActive = name === activeLayerRef.current;
+      const lineOpacity = !isActive || !showOutlines ? 0 : OUTLINE_OPACITY;
+      map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
+    }
+  }, [showOutlines, mapInitialized, sourcesVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-clear layer override when the user zooms out past a layer's minimum zoom.
   useEffect(() => {
@@ -303,7 +322,7 @@ export default function App() {
     mapRef, mapInitialized, sourcesVersion,
     visualizationMode, visualizationModeRef, districtColorMetric,
     districtGeoJson, districtStats, currentLayer,
-    activeLayerRef,
+    activeLayerRef, showOutlinesRef,
   });
 
   useMetricFeatureState({
@@ -320,6 +339,7 @@ export default function App() {
     ethnicityDataRef,
     scalarDataRef,
     hasVtd,
+    showOutlinesRef,
     updateTriggerRef: metricStateUpdateRef,
   });
 
@@ -452,7 +472,7 @@ export default function App() {
             }
             if (map.getLayer(`units-${name}-line`)) {
               map.setLayoutProperty(`units-${name}-line`, 'visibility', visible ? 'visible' : 'none');
-              const lineOpacity = !isActive || visualizationModeRef.current === 'map' || districtColorMetricRef.current !== 'default' ? 0 : 0.5;
+              const lineOpacity = !isActive || !showOutlinesRef.current ? 0 : OUTLINE_OPACITY;
               map.setPaintProperty(`units-${name}-line`, 'line-opacity', lineOpacity);
             }
           }
@@ -663,7 +683,10 @@ export default function App() {
     onRefreshDistricts: handleRefreshDistricts,
     onClearAssignments: handleClearAssignments,
     districtColorMetric,
-    onDistrictColorMetricChange: (m: string) => setDistrictColorMetric(m as any),
+    onDistrictColorMetricChange: (m: string) => {
+      setDistrictColorMetric(m as any);
+      setShowOutlines(m === 'default' || m === 'deviation');
+    },
     districtStats,
     regionStats,
     districtSwatchColors,
@@ -733,7 +756,10 @@ export default function App() {
         visualizationMode={visualizationMode}
         onVisualizationModeChange={(mode) => setVisualizationMode(mode as 'districts' | 'map')}
         districtColorMetric={districtColorMetric}
-        onDistrictColorMetricChange={(m) => setDistrictColorMetric(m as any)}
+        onDistrictColorMetricChange={(m) => {
+          setDistrictColorMetric(m as any);
+          setShowOutlines(m === 'default' || m === 'deviation');
+        }}
         layerOverride={layerOverride}
         onLayerOverrideChange={setLayerOverride}
         currentZoom={currentZoom}
@@ -742,6 +768,8 @@ export default function App() {
         visible={mapInitialized && !loadingPack && pmtilesBufferReady}
         workerReady={workerReady}
         activeDistrict={activeDistrict}
+        showOutlines={showOutlines}
+        onShowOutlinesChange={setShowOutlines}
       />
     </MapViewer>
   );

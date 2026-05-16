@@ -20,7 +20,7 @@ import type { Map as MaplibreMap } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
 import {
   PARTISAN_UNIT_RAMP, ETHNICITY_COLOR_RANGE, SCALAR_COLOR_RAMPS,
-  ETH_COLOR_EXPR,
+  ETH_COLOR_EXPR, OUTLINE_OPACITY,
 } from '@/app/constants/colors';
 import { midZoomLayer } from '@/app/constants/config';
 import { ETHNICITY_METRICS, SCALAR_METRICS, NON_WHITE_GROUPS, ethCatFromPcts } from '@/app/constants/metrics';
@@ -52,13 +52,14 @@ export function useMetricFeatureState(params: {
   ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
   scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
   hasVtd: boolean;
+  showOutlinesRef: MutableRefObject<boolean>;
   /** Ref to receive a direct-call trigger. Set by this hook; caller invokes it after assignments change. */
   updateTriggerRef?: MutableRefObject<(() => void) | null>;
 }) {
   const {
     mapRef, mapInitialized, sourcesVersion, visualizationMode, districtColorMetric, currentLayer,
     blockAssignmentsRef, geoIdByIndexRef, parentBlockIndicesRef,
-    partisanLeanRef, ethnicityDataRef, scalarDataRef, hasVtd, updateTriggerRef,
+    partisanLeanRef, ethnicityDataRef, scalarDataRef, hasVtd, showOutlinesRef, updateTriggerRef,
   } = params;
 
   const isDistrictView = visualizationMode === 'districts';
@@ -155,7 +156,10 @@ export function useMetricFeatureState(params: {
           if (map.getLayer(`units-${name}-fill`)) map.setPaintProperty(`units-${name}-fill`, 'fill-color', fillColor);
         }
         for (const name of ALL_LAYERS) {
-          if (map.getLayer(`units-${name}-line`)) map.setPaintProperty(`units-${name}-line`, 'line-opacity', 0);
+          if (map.getLayer(`units-${name}-line`)) {
+            const opacity = name === currentLayer && showOutlinesRef.current ? OUTLINE_OPACITY : 0;
+            map.setPaintProperty(`units-${name}-line`, 'line-opacity', opacity);
+          }
         }
       };
 
@@ -215,7 +219,10 @@ export function useMetricFeatureState(params: {
     const applyFill = () => {
       for (const name of ALL_LAYERS) {
         if (map.getLayer(`units-${name}-fill`)) map.setPaintProperty(`units-${name}-fill`, 'fill-color', fillColor);
-        if (map.getLayer(`units-${name}-line`)) map.setPaintProperty(`units-${name}-line`, 'line-opacity', 0);
+        if (map.getLayer(`units-${name}-line`)) {
+          const opacity = name === currentLayer && showOutlinesRef.current ? OUTLINE_OPACITY : 0;
+          map.setPaintProperty(`units-${name}-line`, 'line-opacity', opacity);
+        }
       }
     };
 

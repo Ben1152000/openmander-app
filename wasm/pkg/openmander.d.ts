@@ -115,7 +115,8 @@ export class WasmPlan {
     equalize(series: string, tolerance: number, max_iter: number): void;
     /**
      * Perform exact population equalization using ILP block swaps.
-     * Returns the number of blocks moved.
+     * Returns the number of blocks moved (fallback edge count is not
+     * exposed in the WASM binding).
      */
     equalize_exact(series: string): number;
     /**

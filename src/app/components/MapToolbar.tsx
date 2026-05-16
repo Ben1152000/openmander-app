@@ -1,4 +1,4 @@
-import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect, MousePointer2 } from 'lucide-react';
+import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect, MousePointer2, SquareDashed, Square } from 'lucide-react';
 import type React from 'react';
 import { CustomSelect } from './CustomSelect';
 import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK, midZoomLayer } from '@/app/constants/config';
@@ -22,10 +22,12 @@ interface MapToolbarProps {
   workerReady: boolean;
   activeDistrict: number;
   prevDistrict: number;
+  showOutlines: boolean;
+  onShowOutlinesChange: (show: boolean) => void;
 }
 
 
-export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, hasVtd, visible, workerReady, activeDistrict, prevDistrict }: MapToolbarProps) {
+export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode, onVisualizationModeChange, districtColorMetric, onDistrictColorMetricChange, layerOverride, onLayerOverrideChange, currentZoom, layerZoomRanges, hasVtd, visible, workerReady, activeDistrict, prevDistrict, showOutlines, onShowOutlinesChange }: MapToolbarProps) {
   if (!visible) return null;
 
   const precinctLayer = midZoomLayer(hasVtd);
@@ -92,33 +94,28 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
         })()}
       </div>
 
-      {/* Right controls — single card with dividers */}
+      {/* View controls — single card with dividers */}
       <div className="flex items-stretch bg-white rounded-lg shadow-lg pointer-events-auto divide-x divide-gray-200 px-1 py-1">
-        {/* Visualization mode toggle */}
-        <button
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-l-lg transition-colors cursor-pointer select-none ${
-            visualizationMode === 'districts' ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-400 hover:bg-gray-100'
-          }`}
-          onClick={() => onVisualizationModeChange(visualizationMode === 'districts' ? 'map' : 'districts')}
-          title={visualizationMode === 'districts' ? 'Hide districts' : 'Show districts'}
-        >
-          {visualizationMode === 'districts'
-            ? <Eye className="w-4 h-4" />
-            : <EyeOff className="w-4 h-4" />}
-          <span className="text-sm font-medium">Districts</span>
-        </button>
-
-        {/* Layer selector */}
-        <div className="relative flex items-center px-3">
-          <CustomSelect
-            prefix={<Layers className="w-4 h-4 text-gray-700 shrink-0" />}
-            value={layerOverride ?? 'auto'}
-            onChange={v => onLayerOverrideChange(v === 'auto' ? null : v)}
-            options={[
-              { value: 'auto', label: `Auto (${[...LAYER_OPTIONS].reverse().find(o => currentZoom >= o.minZoom)?.label ?? 'County'})`, buttonLabel: 'Auto' },
-              ...availableOptions,
-            ]}
-          />
+        {/* Districts + Outlines toggles */}
+        <div className="flex items-center gap-1 pr-1">
+          <button
+            title={visualizationMode === 'districts' ? 'Hide districts' : 'Show districts'}
+            onClick={() => onVisualizationModeChange(visualizationMode === 'districts' ? 'map' : 'districts')}
+            className={`p-2.5 rounded-lg transition-colors cursor-pointer ${
+              visualizationMode === 'districts' ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-300 hover:bg-gray-100'
+            }`}
+          >
+            {visualizationMode === 'districts' ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+          </button>
+          <button
+            title={showOutlines ? 'Hide unit outlines' : 'Show unit outlines'}
+            onClick={() => onShowOutlinesChange(!showOutlines)}
+            className={`p-2.5 rounded-lg transition-colors cursor-pointer ${
+              showOutlines ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-300 hover:bg-gray-100'
+            }`}
+          >
+            <SquareDashed className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Metric dropdown */}
@@ -143,6 +140,20 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
             ]}
           />
         </div>
+
+        {/* Layer selector */}
+        <div className="relative flex items-center px-3">
+          <CustomSelect
+            prefix={<Layers className="w-4 h-4 text-gray-700 shrink-0" />}
+            value={layerOverride ?? 'auto'}
+            onChange={v => onLayerOverrideChange(v === 'auto' ? null : v)}
+            options={[
+              { value: 'auto', label: `Auto (${[...LAYER_OPTIONS].reverse().find(o => currentZoom >= o.minZoom)?.label ?? 'County'})`, buttonLabel: 'Auto' },
+              ...availableOptions,
+            ]}
+          />
+        </div>
+
       </div>
     </div>
   );

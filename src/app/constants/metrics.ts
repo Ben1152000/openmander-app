@@ -96,6 +96,21 @@ export function ethCatFromStat(d: DistrictStat): number {
   );
 }
 
+/**
+ * Short district-table label for an eth_cat value.
+ * Dominant (≥75%) or majority (50–75%): group name ("White", "Black", …).
+ * Plurality or mixed: "Mixed".
+ * Zero population: "—".
+ */
+export function ethCatShortLabel(cat: number): string {
+  if (cat === 0) return '—';
+  if (cat >= 1  && cat <= 5)  return `${NON_WHITE_GROUPS[cat - 1].label} Maj.`;
+  if (cat === 6)               return 'White Maj.';
+  if (cat >= 7  && cat <= 11) return `${NON_WHITE_GROUPS[cat - 7].label} Maj.`;
+  if (cat === 12)              return 'White Maj.';
+  return 'Mixed';
+}
+
 /** Human-readable label for an eth_cat value. */
 export const ETH_CAT_LABELS: Record<number, string> = {
   0:  '—',
