@@ -1,4 +1,4 @@
-import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect, MousePointer2, SquareDashed, Square } from 'lucide-react';
+import { Hand, Paintbrush, Eraser, Eye, EyeOff, Layers, Palette, BoxSelect, MousePointer2, SquareDashed } from 'lucide-react';
 import type React from 'react';
 import { CustomSelect } from './CustomSelect';
 import { ZOOM_THRESHOLD_COUNTY_TO_VTD, ZOOM_THRESHOLD_VTD_TO_BLOCK, midZoomLayer } from '@/app/constants/config';
