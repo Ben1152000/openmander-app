@@ -67,6 +67,12 @@ interface SidePanelProps {
   onRunAutomation: () => void;
   onExportPlan: () => void;
   onImportPlan: (file: File) => void;
+  availableElections: { series: string; label: string }[];
+  availableCensus: { series: string; label: string }[];
+  selectedElection: string;
+  selectedCensus: string;
+  onElectionChange: (series: string) => void;
+  onCensusChange: (series: string) => void;
 }
 
 
@@ -104,8 +110,16 @@ export function SidePanel(props: SidePanelProps) {
     onRunAutomation,
     onExportPlan,
     onImportPlan,
+    availableElections,
+    availableCensus,
+    selectedElection,
+    selectedCensus,
+    onElectionChange,
+    onCensusChange,
   } = props;
 
+  const [pendingElection, setPendingElection] = useState(selectedElection);
+  const [pendingCensus, setPendingCensus] = useState(selectedCensus);
   const [showUrlDialog, setShowUrlDialog] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [pendingState, setPendingState] = useState('illinois');
@@ -436,6 +450,49 @@ export function SidePanel(props: SidePanelProps) {
                 </Button>
               </div>
 
+              {workerReady && (availableElections.length > 1 || availableCensus.length > 1) && (
+                <div className="space-y-6">
+                  <div className="flex gap-2">
+                    {availableElections.length > 1 && (
+                      <div className="flex-1 min-w-0">
+                        <Label>Election</Label>
+                        <div className="relative mt-2 flex h-10 w-full items-center rounded-md border-2 border-input bg-background px-3 shadow-sm">
+                          <CustomSelect
+                            value={pendingElection}
+                            onChange={setPendingElection}
+                            options={availableElections.map(e => ({ value: e.series, label: e.label }))}
+                            dropdownAlign="left"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {availableCensus.length > 1 && (
+                      <div className="flex-1 min-w-0">
+                        <Label>Census</Label>
+                        <div className="relative mt-2 flex h-10 w-full items-center rounded-md border-2 border-input bg-background px-3 shadow-sm">
+                          <CustomSelect
+                            value={pendingCensus}
+                            onChange={setPendingCensus}
+                            options={availableCensus.map(c => ({ value: c.series, label: c.label }))}
+                            dropdownAlign="left"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    className="w-full"
+                    disabled={pendingElection === selectedElection && pendingCensus === selectedCensus}
+                    onClick={() => {
+                      if (pendingElection !== selectedElection) onElectionChange(pendingElection);
+                      if (pendingCensus !== selectedCensus) onCensusChange(pendingCensus);
+                    }}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              )}
+
               {showUrlDialog && createPortal(
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowUrlDialog(false)}>
                   <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
@@ -510,7 +567,7 @@ export function SidePanel(props: SidePanelProps) {
                         </div>
                       )}
                       <div className="border-t pt-4">
-                        <Section title="Demographics (2020)" />
+                        <Section title={`Demographics (${availableCensus.find(c => c.series === selectedCensus)?.label ?? 'Census'})`} />
                         <div className="space-y-1.5">
                           <Stat label="White"    value={`${regionStats.whitePct.toFixed(1)}%`} />
                           <Stat label="Hispanic" value={`${regionStats.hispanicPct.toFixed(1)}%`} />

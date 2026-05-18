@@ -1,13 +1,14 @@
 // One-shot worker: receives packFiles, parses CSV metrics, posts result and exits.
 //
 // Messages in:
-//   { type: 'parse', packFiles: Record<string, Uint8Array> }
+//   { type: 'parse', packFiles: Record<string, Uint8Array>, electionSeries?: string, censusSeries?: string }
 //
 // Messages out:
-//   { type: 'metrics', partisanLean, geoIdByIndex, scalarData, ethnicityData, ... }
+//   { type: 'metrics', partisanLean, geoIdByIndex, scalarData, ethnicityData, ...,
+//     availableElections, availableCensus }
 
-import { ETHNICITY_METRICS, ETHNICITY_COLS, SCALAR_METRICS, SCALAR_TRANSFORMS } from './app/constants/metrics';
-import type { EthnicityMetric, ScalarMetric } from './app/constants/metrics';
+import { ETHNICITY_METRICS, ETHNICITY_COLS, SCALAR_METRICS, SCALAR_TRANSFORMS } from '../app/constants/metrics';
+import type { EthnicityMetric, ScalarMetric } from '../app/constants/metrics';
 
 /** Parse a single CSV line, respecting RFC 4180 double-quote escaping. */
 function parseCSVLine(line: string): string[] {
@@ -29,8 +30,26 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
+function electionSeriesLabel(series: string): string {
+  const m = series.match(/^E_(\d\d)_(\w+)$/);
+  if (!m) return series;
+  const year = 2000 + parseInt(m[1]);
+  const types: Record<string, string> = { PRES: 'Presidential', SEN: 'Senate', GOV: 'Governor', HOUSE: 'House' };
+  return `${year} ${types[m[2]] ?? m[2]}`;
+}
+
+function censusSeriesLabel(series: string): string {
+  const m = series.match(/^T_(\d\d)_CENS$/);
+  if (!m) return series;
+  return `${2000 + parseInt(m[1])} Census`;
+}
+
 self.onmessage = (e: MessageEvent) => {
-  const { packFiles } = e.data as { packFiles: Record<string, Uint8Array> };
+  const { packFiles, electionSeries: inputElection, censusSeries: inputCensus } =
+    e.data as { packFiles: Record<string, Uint8Array>; electionSeries?: string; censusSeries?: string };
+
+  const electionSeries = inputElection ?? 'E_20_PRES';
+  const censusSeries   = inputCensus  ?? 'T_20_CENS';
 
   const allLayers = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
   const partisanLean: Record<string, number> = {};
@@ -53,13 +72,25 @@ self.onmessage = (e: MessageEvent) => {
   const unitLandKm2: Record<string, number> = {};
   // Voting age population per geoId.
   const unitVap: Record<string, number> = {};
-  // Human-readable election name derived from the column header (e.g. "2020 Presidential").
+  // Human-readable election/census names.
   let electionName = '';
-  // Human-readable census name derived from the column header (e.g. "2020 Census").
   let censusName = '';
+
+  // Available series detected from headers (populated on first layer).
+  let availableElections: { series: string; label: string }[] = [];
+  let availableCensus: { series: string; label: string }[] = [];
+  let seriesDetected = false;
 
   for (const m of SCALAR_METRICS) scalarData[m] = {};
   for (const m of ETHNICITY_METRICS) { ethnicityData[m] = {}; unitEthnicCounts[m] = {}; }
+
+  // Derive column names from selected series.
+  const electionDemCol   = `${electionSeries}_Dem`;
+  const electionRepCol   = `${electionSeries}_Rep`;
+  const electionTotalCol = `${electionSeries}_Total`;
+  const censTotalCol     = `${censusSeries}_Total`;
+  const vapYear = censusSeries.match(/^T_(\d\d)_CENS$/)?.[1] ?? '20';
+  const vapCol  = `V_${vapYear}_VAP_Total`;
 
   for (const layerName of allLayers) {
     const csvFile = packFiles[`data/${layerName}.csv`];
@@ -69,25 +100,44 @@ self.onmessage = (e: MessageEvent) => {
     const headers = lines[0].split(','); // header row has no quoted fields
     const col = (name: string) => headers.indexOf(name);
 
+    // Detect available series from headers (once, on first layer).
+    if (!seriesDetected) {
+      seriesDetected = true;
+      const elSet = new Set<string>();
+      const cSet  = new Set<string>();
+      for (const h of headers) {
+        const em = h.match(/^E_(\d\d)_(\w+)_Dem$/);
+        if (em) elSet.add(`E_${em[1]}_${em[2]}`);
+        const cm = h.match(/^T_(\d\d)_CENS_Total$/);
+        if (cm) cSet.add(`T_${cm[1]}_CENS`);
+      }
+      availableElections = [...elSet].map(s => ({ series: s, label: electionSeriesLabel(s) }));
+      availableCensus    = [...cSet].map(s => ({ series: s, label: censusSeriesLabel(s) }));
+    }
+
     const idxIdx = col('idx'), geoIdIdx = col('geo_id');
     if (geoIdIdx === -1) continue;
     const useRowAsIdx = idxIdx === -1; // packs without an explicit idx column use row position
 
-    // Use 2020 Presidential election and 2020 Census columns.
-    const electionDemCol = headers.includes('E_20_PRES_Dem') ? 'E_20_PRES_Dem' : '';
-    const demIdx = electionDemCol ? col(electionDemCol) : -1;
-    const repIdx = electionDemCol ? col('E_20_PRES_Rep') : -1;
-    const presTotalIdx = electionDemCol ? col('E_20_PRES_Total') : -1;
-    const vap20Idx = col('V_20_VAP_Total');
-    if (!electionName && electionDemCol) electionName = '2020 Presidential';
+    const demIdx       = col(electionDemCol);
+    const repIdx       = col(electionRepCol);
+    const presTotalIdx = col(electionTotalCol);
+    const vapIdx       = col(vapCol);
+    const censTotalIdx = col(censTotalCol);
+    const landM2Idx    = col('land_m2');
+    const nameIdx      = col('name');
 
-    const censTotalCol = 'T_20_CENS_Total';
-    if (!censusName) censusName = '2020 Census';
-    const censTotalIdx = col(censTotalCol), landM2Idx = col('land_m2');
-    const nameIdx = col('name');
+    if (!electionName && demIdx !== -1) electionName = electionSeriesLabel(electionSeries);
+    if (!censusName) censusName = censusSeriesLabel(censusSeries);
+
     unitNames[layerName] = {};
+
+    // Build ethnicity column indices using the selected census series.
     const ethnicColIdxs = Object.fromEntries(
-      ETHNICITY_METRICS.map(m => [m, col(ETHNICITY_COLS[m])])
+      ETHNICITY_METRICS.map(m => {
+        const colName = ETHNICITY_COLS[m].replace('T_20_CENS', censusSeries);
+        return [m, col(colName)];
+      })
     ) as Record<EthnicityMetric, number>;
 
     // Parent geoId columns — only present on the block layer
@@ -148,9 +198,9 @@ self.onmessage = (e: MessageEvent) => {
         if (landM2Idx !== -1) unitLandKm2[geoId] = landKm2;
         scalarData['population_density']![geoId] = pop > 0 && landKm2 > 0
           ? SCALAR_TRANSFORMS['population_density'](pop / landKm2) : -1;
-        const vap = vap20Idx !== -1 ? (parseFloat(cols[vap20Idx]) || 0) : 0;
+        const vap = vapIdx !== -1 ? (parseFloat(cols[vapIdx]) || 0) : 0;
         scalarData['turnout']![geoId] = vap > 0 ? presTotal / vap : -1;
-        if (vap20Idx !== -1) unitVap[geoId] = vap;
+        if (vapIdx !== -1) unitVap[geoId] = vap;
         for (const m of ETHNICITY_METRICS) {
           const ci = ethnicColIdxs[m];
           if (ci !== -1) {
@@ -168,6 +218,8 @@ self.onmessage = (e: MessageEvent) => {
     type: 'metrics',
     partisanLean, geoIdByIndex, scalarData, ethnicityData,
     blockToParents, parentBlockIndices,
-    unitNames, unitPopulation, unitElectionVotes, unitEthnicCounts, unitLandKm2, unitVap, electionName, censusName,
+    unitNames, unitPopulation, unitElectionVotes, unitEthnicCounts, unitLandKm2, unitVap,
+    electionName, censusName,
+    availableElections, availableCensus,
   });
 };

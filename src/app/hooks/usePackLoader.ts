@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PMTiles } from 'pmtiles';
-import { loadPackFromDirectory } from '@/loadPack';
-import { loadAndCachePMTiles, cacheAndSetPMTiles, setPMTilesBuffer } from '@/pmtilesCache';
+import { loadPackFromDirectory } from '@/lib/loadPack';
+import { loadAndCachePMTiles, cacheAndSetPMTiles, setPMTilesBuffer } from '@/lib/pmtilesCache';
 import { STATE_CONFIGS } from '@/app/constants/config';
 
 export type LayerZoomRanges = Record<string, { minzoom: number; maxzoom: number }>;

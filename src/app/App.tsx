@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import maplibregl, { Map } from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
@@ -23,7 +23,7 @@ import { useMapLayers } from './hooks/useMapLayers';
 import { usePaintHandlers } from './hooks/usePaintHandlers';
 import { useVisualizationPaint } from './hooks/useVisualizationPaint';
 import { useMetricFeatureState } from './hooks/useMetricFeatureState';
-import { WorkerPlan } from '@/workerPlan';
+import { WorkerPlan } from '@/workers/workerPlan';
 
 // How many zoom levels before the VTD→block threshold to start prefetching the block layer.
 const BLOCK_PRELOAD_RANGE = 0.5;
@@ -163,6 +163,17 @@ export default function App() {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'summary' | 'districts' | 'automation' | 'analysis' | 'debug'>('summary');
+
+  // Available / selected data series (election + census)
+  const [availableElections, setAvailableElections] = useState<{ series: string; label: string }[]>([]);
+  const [availableCensus, setAvailableCensus] = useState<{ series: string; label: string }[]>([]);
+  const [selectedElection, setSelectedElection] = useState('E_20_PRES');
+  const [selectedCensus, setSelectedCensus] = useState('T_20_CENS');
+  const selectedElectionRef = useRef('E_20_PRES');
+  const selectedCensusRef   = useRef('T_20_CENS');
+  selectedElectionRef.current = selectedElection;
+  selectedCensusRef.current   = selectedCensus;
+  const packFilesRef = useRef<Record<string, Uint8Array> | null>(null);
 
   // Plan worker for background optimization
   const planRef = useRef<WorkerPlan | null>(null);
@@ -345,7 +356,7 @@ export default function App() {
 
   // Spawn plan worker eagerly so WASM compilation overlaps with pack fetching.
   useEffect(() => {
-    const worker = new Worker(new URL('../planWorker.ts', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('../workers/planWorker.ts', import.meta.url), { type: 'module' });
     planRef.current = new WorkerPlan(worker, {
       onLog: (message) => console.log(message),
       onAssignments: (data, done) => {
@@ -386,6 +397,42 @@ export default function App() {
     return () => { planRef.current?.terminate(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const runMetricsWorker = useCallback((elSeries: string, cenSeries: string) => {
+    if (!packFilesRef.current) return;
+    metricsWorkerRef.current?.terminate();
+    const mw = new Worker(new URL('../workers/metricsWorker.ts', import.meta.url), { type: 'module' });
+    mw.onmessage = (e) => {
+      applyMetricsRef.current?.(
+        e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData,
+        e.data.blockToParents ?? {}, e.data.parentBlockIndices ?? {},
+        e.data.unitNames ?? {}, e.data.unitPopulation ?? {},
+        e.data.unitElectionVotes ?? {}, e.data.unitEthnicCounts ?? {},
+        e.data.unitLandKm2 ?? {}, e.data.unitVap ?? {}, e.data.electionName ?? '', e.data.censusName ?? '',
+      );
+      if (e.data.availableElections?.length) setAvailableElections(e.data.availableElections);
+      if (e.data.availableCensus?.length) setAvailableCensus(e.data.availableCensus);
+      metricStateUpdateRef.current?.();
+      mw.terminate();
+    };
+    mw.onerror = (e) => console.error('[MetricsWorker] Error:', e.message, e);
+    metricsWorkerRef.current = mw;
+    mw.postMessage({ packFiles: packFilesRef.current, electionSeries: elSeries, censusSeries: cenSeries });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleElectionChange = useCallback((series: string) => {
+    setSelectedElection(series);
+    selectedElectionRef.current = series;
+    runMetricsWorker(series, selectedCensusRef.current);
+    planRef.current?.setDataSeries(series, selectedCensusRef.current);
+  }, [runMetricsWorker]);
+
+  const handleCensusChange = useCallback((series: string) => {
+    setSelectedCensus(series);
+    selectedCensusRef.current = series;
+    runMetricsWorker(selectedElectionRef.current, series);
+    planRef.current?.setDataSeries(selectedElectionRef.current, series);
+  }, [runMetricsWorker]);
+
   // When pack files arrive, initialise the plan worker and metrics worker in parallel.
   useEffect(() => {
     if (!mapData?.packFiles || !numDistricts || !planRef.current) return;
@@ -405,22 +452,12 @@ export default function App() {
     });
 
     // Metrics worker: CSV parsing (~2.5s), runs in parallel with WasmMap (~7s)
-    metricsWorkerRef.current?.terminate();
-    const mw = new Worker(new URL('../metricsWorker.ts', import.meta.url), { type: 'module' });
-    mw.onmessage = (e) => {
-      applyMetricsRef.current?.(
-        e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData,
-        e.data.blockToParents ?? {}, e.data.parentBlockIndices ?? {},
-        e.data.unitNames ?? {}, e.data.unitPopulation ?? {},
-        e.data.unitElectionVotes ?? {}, e.data.unitEthnicCounts ?? {},
-        e.data.unitLandKm2 ?? {}, e.data.unitVap ?? {}, e.data.electionName ?? '', e.data.censusName ?? '',
-      );
-      metricStateUpdateRef.current?.();
-      mw.terminate();
-    };
-    mw.onerror = (e) => console.error('[MetricsWorker] Error:', e.message, e);
-    metricsWorkerRef.current = mw;
-    mw.postMessage({ packFiles: mapData.packFiles });
+    packFilesRef.current = mapData.packFiles;
+    setSelectedElection('E_20_PRES');
+    setSelectedCensus('T_20_CENS');
+    setAvailableElections([]);
+    setAvailableCensus([]);
+    runMetricsWorker('E_20_PRES', 'T_20_CENS');
   }, [mapData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize map only once
@@ -708,6 +745,12 @@ export default function App() {
     onRunAutomation: handleRunAutomation,
     onExportPlan: handleExportPlan,
     onImportPlan: handleImportPlan,
+    availableElections,
+    availableCensus,
+    selectedElection,
+    selectedCensus,
+    onElectionChange: handleElectionChange,
+    onCensusChange: handleCensusChange,
   };
 
   const mapViewer = (

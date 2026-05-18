@@ -18,7 +18,7 @@
 //   { type: 'log', message: string }                          — forwarded console.log (worker runs off main thread)
 //   { type: 'error', message: string }
 
-import init, { WasmMap, WasmPlan } from '../wasm/pkg/openmander';
+import init, { WasmMap, WasmPlan } from '../../wasm/pkg/openmander';
 
 // Forward logs to the main thread so they appear in the DevTools console under the page context.
 function log(message: string) {
@@ -48,6 +48,13 @@ const wasmReady = init();
 let wasmMap: WasmMap | null = null;
 let wasmPlan: WasmPlan | null = null;
 
+let electionSeries = 'E_20_PRES';
+let censusSeries   = 'T_20_CENS';
+function vapColumn() {
+  const m = censusSeries.match(/^T_(\d\d)_CENS$/);
+  return m ? `V_${m[1]}_VAP_Total` : 'V_20_VAP_Total';
+}
+
 const GEOMETRY_UPDATE_INTERVAL_MS = 500;
 let lastGeometryMs = 0;
 
@@ -69,10 +76,10 @@ function sendGeometries() {
 
   // Include partisan totals so the main thread doesn't need to call plan.district_totals()
   const available: string[] = (wasmPlan as any).series() as string[];
-  const demTotals: number[] | null = available.includes('E_20_PRES_Dem')
-    ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Dem') as number[]) : null;
-  const repTotals: number[] | null = available.includes('E_20_PRES_Rep')
-    ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Rep') as number[]) : null;
+  const demTotals: number[] | null = available.includes(`${electionSeries}_Dem`)
+    ? Array.from((wasmPlan as any).district_totals(`${electionSeries}_Dem`) as number[]) : null;
+  const repTotals: number[] | null = available.includes(`${electionSeries}_Rep`)
+    ? Array.from((wasmPlan as any).district_totals(`${electionSeries}_Rep`) as number[]) : null;
 
   const transferables = items.map(item => item.wkb.buffer as ArrayBuffer);
   (self as any).postMessage({ type: 'geometries', items, demTotals, repTotals }, transferables);
@@ -89,44 +96,45 @@ function sendStats() {
   };
 
   // Region stats
-  const regionPop = sumAll('T_20_CENS_Total');
-  const regionDem = sumAll('E_20_PRES_Dem');
-  const regionRep = sumAll('E_20_PRES_Rep');
+  const regionPop = sumAll(`${censusSeries}_Total`);
+  const regionDem = sumAll(`${electionSeries}_Dem`);
+  const regionRep = sumAll(`${electionSeries}_Rep`);
   const epct = (series: string) => regionPop > 0 ? (sumAll(series) / regionPop) * 100 : 0;
   const regionStats = {
     totalPop: regionPop,
     demVotes: regionDem,
     repVotes: regionRep,
-    whitePct:    epct('T_20_CENS_White'),
-    blackPct:    epct('T_20_CENS_Black'),
-    hispanicPct: epct('T_20_CENS_Hispanic'),
-    asianPct:    epct('T_20_CENS_Asian'),
-    nativePct:   epct('T_20_CENS_Native'),
-    pacificPct:  epct('T_20_CENS_Pacific'),
+    whitePct:    epct(`${censusSeries}_White`),
+    blackPct:    epct(`${censusSeries}_Black`),
+    hispanicPct: epct(`${censusSeries}_Hispanic`),
+    asianPct:    epct(`${censusSeries}_Asian`),
+    nativePct:   epct(`${censusSeries}_Native`),
+    pacificPct:  epct(`${censusSeries}_Pacific`),
   };
 
   // Per-district stats
-  const populations: number[] = available.includes('T_20_CENS_Total')
-    ? Array.from((wasmPlan as any).district_totals('T_20_CENS_Total') as any) as number[]
+  const populations: number[] = available.includes(`${censusSeries}_Total`)
+    ? Array.from((wasmPlan as any).district_totals(`${censusSeries}_Total`) as any) as number[]
     : [];
 
   const ideal = regionPop > 0 && populations.length > 0 ? regionPop / populations.length : 0;
 
-  const demVotes: number[] | null = available.includes('E_20_PRES_Dem')
-    ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Dem') as any) as number[] : null;
-  const repVotes: number[] | null = available.includes('E_20_PRES_Rep')
-    ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Rep') as any) as number[] : null;
+  const demVotes: number[] | null = available.includes(`${electionSeries}_Dem`)
+    ? Array.from((wasmPlan as any).district_totals(`${electionSeries}_Dem`) as any) as number[] : null;
+  const repVotes: number[] | null = available.includes(`${electionSeries}_Rep`)
+    ? Array.from((wasmPlan as any).district_totals(`${electionSeries}_Rep`) as any) as number[] : null;
   const landM2: number[] | null = available.includes('land_m2')
     ? Array.from((wasmPlan as any).district_totals('land_m2') as any) as number[] : null;
-  const presTotal: number[] | null = available.includes('E_20_PRES_Total')
-    ? Array.from((wasmPlan as any).district_totals('E_20_PRES_Total') as any) as number[] : null;
-  const vap20: number[] | null = available.includes('V_20_VAP_Total')
-    ? Array.from((wasmPlan as any).district_totals('V_20_VAP_Total') as any) as number[] : null;
+  const presTotal: number[] | null = available.includes(`${electionSeries}_Total`)
+    ? Array.from((wasmPlan as any).district_totals(`${electionSeries}_Total`) as any) as number[] : null;
+  const vapCol = vapColumn();
+  const vap20: number[] | null = available.includes(vapCol)
+    ? Array.from((wasmPlan as any).district_totals(vapCol) as any) as number[] : null;
 
   const ethnicGroups = ['White', 'Black', 'Hispanic', 'Asian', 'Native', 'Pacific'] as const;
   const ethnicTotals: Record<string, number[] | null> = {};
   for (const g of ethnicGroups) {
-    const col = `T_20_CENS_${g}`;
+    const col = `${censusSeries}_${g}`;
     ethnicTotals[g] = available.includes(col)
       ? Array.from((wasmPlan as any).district_totals(col) as any) as number[]
       : null;
@@ -172,14 +180,27 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'assign-unit'; layer: string; geoId: string; district: number }
     | { type: 'assign-units-batch'; layer: string; geoIds: string[]; district: number }
     | { type: 'set-assignments'; data: Uint32Array }
-    | { type: 'anneal'; configJson: string; };
+    | { type: 'anneal'; configJson: string }
+    | { type: 'set-data-series'; electionSeries: string; censusSeries: string };
 
   try {
+    if (msg.type === 'set-data-series') {
+      electionSeries = msg.electionSeries;
+      censusSeries   = msg.censusSeries;
+      sendStats();
+      if (lastGeometryMs > 0) sendGeometries();
+      return;
+    }
+
     if (msg.type === 'init') {
       await wasmReady;
 
       wasmMap?.free();
       wasmPlan?.free();
+
+      // Reset series to defaults for the new map.
+      electionSeries = 'E_20_PRES';
+      censusSeries   = 'T_20_CENS';
 
       wasmMap = new WasmMap(msg.packFiles);
       // Pack bytes are now in WASM linear memory; drop JS references so GC can
