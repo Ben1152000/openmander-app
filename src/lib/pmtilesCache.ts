@@ -18,6 +18,7 @@ interface CacheEntry {
   data: ArrayBuffer;
   timestamp: number;
   size: number;
+  sha256?: string;
 }
 
 let db: IDBDatabase | null = null;
@@ -47,9 +48,11 @@ async function initDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Get cached PMTiles file from IndexedDB
+ * Get cached PMTiles file from IndexedDB.
+ * If expectedSha256 is provided and doesn't match the stored hash, treats
+ * the entry as stale and returns null (forcing a fresh download).
  */
-async function getCachedFile(url: string): Promise<ArrayBuffer | null> {
+async function getCachedFile(url: string, expectedSha256?: string): Promise<ArrayBuffer | null> {
   try {
     const database = await initDB();
     return new Promise((resolve, reject) => {
@@ -60,7 +63,14 @@ async function getCachedFile(url: string): Promise<ArrayBuffer | null> {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const entry = request.result as CacheEntry | undefined;
-        resolve(entry?.data ?? null);
+        if (!entry) { resolve(null); return; }
+        // Treat as stale if we have an expected hash but the stored hash is
+        // missing (pre-fix entry) or different (pack was rebuilt).
+        if (expectedSha256 && entry.sha256 !== expectedSha256) {
+          resolve(null); // stale
+          return;
+        }
+        resolve(entry.data);
       };
     });
   } catch (err) {
@@ -72,7 +82,7 @@ async function getCachedFile(url: string): Promise<ArrayBuffer | null> {
 /**
  * Cache PMTiles file in IndexedDB
  */
-async function cacheFile(url: string, data: ArrayBuffer): Promise<void> {
+async function cacheFile(url: string, data: ArrayBuffer, sha256?: string): Promise<void> {
   try {
     const database = await initDB();
     return new Promise((resolve, reject) => {
@@ -83,6 +93,7 @@ async function cacheFile(url: string, data: ArrayBuffer): Promise<void> {
         data,
         timestamp: Date.now(),
         size: data.byteLength,
+        sha256,
       };
 
       const request = store.put(entry);
@@ -99,11 +110,12 @@ async function cacheFile(url: string, data: ArrayBuffer): Promise<void> {
  */
 async function downloadPMTilesFile(
   url: string,
+  expectedSha256?: string,
   onProgress?: (loaded: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-  // First check cache
-  const cached = await getCachedFile(url);
+  // First check cache (validates sha256 if provided — stale entries return null)
+  const cached = await getCachedFile(url, expectedSha256);
   if (cached) {
     return cached;
   }
@@ -157,8 +169,8 @@ async function downloadPMTilesFile(
     offset += chunk.length;
   }
 
-  // Cache the file
-  await cacheFile(url, buffer);
+  // Cache the file (store sha256 so future loads can detect stale entries)
+  await cacheFile(url, buffer, expectedSha256);
 
   return buffer;
 }
@@ -168,6 +180,7 @@ async function downloadPMTilesFile(
  */
 export async function loadAndCachePMTiles(
   pmtilesPath: string,
+  expectedSha256?: string,
   onProgress?: (loaded: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
@@ -176,7 +189,7 @@ export async function loadAndCachePMTiles(
     ? pmtilesPath
     : `${window.location.origin}${pmtilesPath}`;
 
-  return downloadPMTilesFile(fullUrl, onProgress, signal);
+  return downloadPMTilesFile(fullUrl, expectedSha256, onProgress, signal);
 }
 
 /**

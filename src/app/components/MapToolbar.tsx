@@ -38,11 +38,16 @@ export function MapToolbar({ drawingTool, onDrawingToolChange, visualizationMode
     { value: 'block',        label: 'Block',    minZoom: ZOOM_THRESHOLD_VTD_TO_BLOCK },
   ];
 
+  const hasRanges = Object.keys(layerZoomRanges).length > 0;
+
   const activeLayerLabel = layerOverride
     ? LAYER_OPTIONS.find(o => o.value === layerOverride)?.label ?? 'Unit'
-    : [...LAYER_OPTIONS].reverse().find(o => currentZoom >= o.minZoom)?.label ?? 'County';
-
-  const hasRanges = Object.keys(layerZoomRanges).length > 0;
+    : hasRanges
+      ? [...LAYER_OPTIONS].reverse().find(o => {
+          const range = layerZoomRanges[o.value];
+          return range && currentZoom >= range.minzoom;
+        })?.label ?? 'County'
+      : [...LAYER_OPTIONS].reverse().find(o => currentZoom >= o.minZoom)?.label ?? 'County';
   const availableOptions = LAYER_OPTIONS.filter(o => {
     if (hasRanges) {
       const range = layerZoomRanges[o.value];

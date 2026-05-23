@@ -47,6 +47,7 @@ const wasmReady = init();
 
 let wasmMap: WasmMap | null = null;
 let wasmPlan: WasmPlan | null = null;
+let abortRequested = false;
 
 let electionSeries = 'E_20_PRES';
 let censusSeries   = 'T_20_CENS';
@@ -181,10 +182,16 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'assign-units-batch'; layer: string; geoIds: string[]; district: number }
     | { type: 'set-assignments'; data: Uint32Array }
     | { type: 'anneal'; configJson: string }
+    | { type: 'abort' }
     | { type: 'set-data-series'; electionSeries: string; censusSeries: string };
 
   try {
-    if (msg.type === 'set-data-series') {
+    if (msg.type === 'abort') {
+      abortRequested = true;
+      return;
+    }
+
+  if (msg.type === 'set-data-series') {
       electionSeries = msg.electionSeries;
       censusSeries   = msg.censusSeries;
       sendStats();
@@ -271,6 +278,11 @@ self.onmessage = async (e: MessageEvent) => {
 
         // Yield so the worker event loop can process a cancel/abort message before the next chunk.
         await new Promise<void>(r => setTimeout(r, 0));
+        if (abortRequested) {
+          abortRequested = false;
+          sendStats();
+          break;
+        }
       }
 
     } else if (msg.type === 'equalize-exact') {
@@ -347,6 +359,11 @@ self.onmessage = async (e: MessageEvent) => {
 
         if (done) break;
         await new Promise<void>(r => setTimeout(r, 0));
+        if (abortRequested) {
+          abortRequested = false;
+          sendStats();
+          break;
+        }
       }
 
       log('[Worker] Anneal complete');

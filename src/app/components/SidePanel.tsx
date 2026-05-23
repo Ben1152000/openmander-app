@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, Download, Link } from 'lucide-react';
+import { Upload, Download, Link, OctagonX } from 'lucide-react';
 import openmanderIcon from '/openmander-icon.svg';
 import { CustomSelect } from './CustomSelect';
 
@@ -65,6 +65,7 @@ interface SidePanelProps {
   onAnnealObjectivesChange: (objectives: string[]) => void;
   automationRunning: boolean;
   onRunAutomation: () => void;
+  onAbortAutomation: () => void;
   onExportPlan: () => void;
   onImportPlan: (file: File) => void;
   availableElections: { series: string; label: string }[];
@@ -108,6 +109,7 @@ export function SidePanel(props: SidePanelProps) {
     onAnnealObjectivesChange,
     automationRunning,
     onRunAutomation,
+    onAbortAutomation,
     onExportPlan,
     onImportPlan,
     availableElections,
@@ -723,6 +725,17 @@ export function SidePanel(props: SidePanelProps) {
                 >
                   {automationRunning ? 'Running...' : algorithm === 'anneal' ? 'Optimize' : 'Run'}
                 </Button>
+                {automationRunning && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700 shrink-0"
+                    onClick={onAbortAutomation}
+                    title="Abort after current step"
+                  >
+                    <OctagonX className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
 
               <div>

@@ -41,7 +41,7 @@ export function usePackLoader(
       try {
         const packsBase = import.meta.env.VITE_PACK_SERVER_URL ?? '/packs';
         const packPath = `${packsBase}/${config.packDir}`;
-        const { packFiles, pmtilesBuffer } = await loadPackFromDirectory(packPath, (cur, total, file) => {
+        const { packFiles, pmtilesBuffer, pmtilesSha256 } = await loadPackFromDirectory(packPath, (cur, total, file) => {
           setLoadingStatus(`Loading pack files... (${cur}/${total})${file ? ` - ${file}` : ''}`);
         }, signal);
         if (signal.aborted) return;
@@ -59,8 +59,10 @@ export function usePackLoader(
           await cacheAndSetPMTiles(pmtilesAbsUrl, pmtilesBuffer);
         } else {
           // PMTiles exists as a single file — use the normal download + cache path.
+          // Pass sha256 from manifest so stale IndexedDB entries are detected and evicted.
           const pmtilesDownloaded = await loadAndCachePMTiles(
             pmtilesUrl,
+            pmtilesSha256 ?? undefined,
             (loaded, total) => {
               const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
               setLoadingStatus(`Downloading geometry tiles... ${pct}%`);

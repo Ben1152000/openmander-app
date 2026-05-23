@@ -155,6 +155,7 @@ export default function App() {
   // Automation settings
   const [automationRunning, setAutomationRunning] = useState(false);
   const automationRunningRef = useRef(false);
+  const abortRequestedRef = useRef(false);
   const [algorithm, setAlgorithm] = useState<'random-initialization' | 'minimize-county-splits' | 'pop-balance' | 'anneal' | 'equalize-exact' | 'debug-equalization-graph'>('random-initialization');
   const [popTolerance, setPopTolerance] = useState(0.0001);
   const [popIterations, setPopIterations] = useState(300);
@@ -477,7 +478,7 @@ export default function App() {
       container: mapDivRef.current,
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
       bounds: STATE_CONFIGS['illinois'].bounds,
-      fitBoundsOptions: { padding: 40 },
+      fitBoundsOptions: { padding: { top: 80, right: 32, bottom: 32, left: 32 } },
       minZoom: 4.0,
       antialias: true,
       fadeDuration: 0,
@@ -540,7 +541,7 @@ export default function App() {
     setLoadingStatus('Running...');
     setAutomationRunning(true);
     automationRunningRef.current = true;
-    const done = () => { automationRunningRef.current = false; setAutomationRunning(false); setLoadingStatus(''); };
+    const done = () => { automationRunningRef.current = false; abortRequestedRef.current = false; setAutomationRunning(false); setLoadingStatus(''); };
     if (algorithm === 'random-initialization') {
       planRef.current.randomize().then(done, done);
     } else if (algorithm === 'minimize-county-splits') {
@@ -569,13 +570,15 @@ export default function App() {
       const preStep = isEmpty
         ? planRef.current.randomize().then(() => planRef.current!.equalize('T_20_CENS_Total', 0.01, 500))
         : Promise.resolve();
-      preStep.then(() => planRef.current!.anneal(JSON.stringify(annealConfig))).then(done, done);
+      preStep.then(() => abortRequestedRef.current ? done() : planRef.current!.anneal(JSON.stringify(annealConfig))).then(done, done);
     } else if (algorithm === 'equalize-exact') {
       planRef.current.equalizeExact('T_20_CENS_Total').then(done, done);
     } else if (algorithm === 'debug-equalization-graph') {
       planRef.current.debugEqualizationGraph('T_20_CENS_Total').then(done, done);
     }
   };
+
+  const handleAbortAutomation = () => { abortRequestedRef.current = true; planRef.current?.abort(); };
 
   const handleRefreshDistricts = () => {
     planRef.current?.computeGeometries();
@@ -663,7 +666,10 @@ export default function App() {
     resetDistrictData();
     setVisualizationMode('districts');
     setDistrictColorMetric('default');
+    setShowOutlines(true);
     setLayerOverride(null);
+    setAvailableElections([]);
+    setAvailableCensus([]);
     if (state !== loadedState) {
       resetPmtilesBuffer();
     } else if (mapData?.packFiles && planRef.current) {
@@ -708,7 +714,7 @@ export default function App() {
       const config = STATE_CONFIGS[state];
       if (config && mapRef.current) {
         mapRef.current.stop();
-        mapRef.current.fitBounds(config.bounds, { animate: true, padding: 40, curve: 0.5 });
+        mapRef.current.fitBounds(config.bounds, { animate: true, padding: { top: 80, right: 32, bottom: 32, left: 32 }, curve: 0.5 });
       }
     },
     activeDistrict,
@@ -743,6 +749,7 @@ export default function App() {
     onAnnealObjectivesChange: setAnnealObjectives,
     automationRunning,
     onRunAutomation: handleRunAutomation,
+    onAbortAutomation: handleAbortAutomation,
     onExportPlan: handleExportPlan,
     onImportPlan: handleImportPlan,
     availableElections,

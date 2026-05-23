@@ -157,6 +157,10 @@ export class WorkerPlan {
     return this.call('stats', { type: 'set-assignments', data }, [data.buffer]);
   }
 
+  abort(): void {
+    this.worker.postMessage({ type: 'abort' });
+  }
+
   setDataSeries(electionSeries: string, censusSeries: string): void {
     this.worker.postMessage({ type: 'set-data-series', electionSeries, censusSeries });
   }

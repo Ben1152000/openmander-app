@@ -36,14 +36,14 @@ export function useMapLayers(params: {
     if (map.getSource(sourceId)) map.removeSource(sourceId);
     loadedSourcesRef.current.delete('all');
 
-    map.fitBounds(config.bounds, { animate: false, padding: 40 });
+    map.fitBounds(config.bounds, { animate: false, padding: { top: 80, right: 32, bottom: 32, left: 32 } });
   }, [mapInitialized, loadedState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
     const config = STATE_CONFIGS[loadedState];
     if (!config) return;
-
+ 
     const map = mapRef.current;
     const sourceId = 'units-all';
 

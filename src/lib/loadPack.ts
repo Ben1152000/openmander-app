@@ -32,7 +32,7 @@ export async function loadPackFromDirectory(
   packPath: string,
   onProgress?: (current: number, total: number, fileName?: string) => void,
   signal?: AbortSignal,
-): Promise<{ packFiles: Record<string, Uint8Array>; pmtilesBuffer: ArrayBuffer | null }> {
+): Promise<{ packFiles: Record<string, Uint8Array>; pmtilesBuffer: ArrayBuffer | null; pmtilesSha256: string | null }> {
   const manifestResponse = await fetch(`${packPath}/manifest.json`, { signal });
   if (!manifestResponse.ok) {
     throw new Error(`Failed to load manifest.json: ${manifestResponse.status} ${manifestResponse.statusText}`);
@@ -74,15 +74,20 @@ export async function loadPackFromDirectory(
   }));
 
   // Fetch PMTiles chunks only if the file was split (parts differ from logical name).
+  // For non-chunked files, return the sha256 from the manifest so the caller can
+  // validate the IndexedDB cache and detect stale entries after a pack rebuild.
   let pmtilesBuffer: ArrayBuffer | null = null;
+  let pmtilesSha256: string | null = null;
   for (const logicalName of pmtilesNames) {
     const parts = groups.get(logicalName)!;
     const isChunked = parts.length > 1 || parts[0] !== logicalName;
     if (isChunked) {
       const data = await fetchAndConcat(parts.map(p => `${packPath}/${p}`), signal);
       pmtilesBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    } else {
+      pmtilesSha256 = (manifest.files?.[logicalName]?.sha256 as string | undefined) ?? null;
     }
   }
 
-  return { packFiles, pmtilesBuffer };
+  return { packFiles, pmtilesBuffer, pmtilesSha256 };
 }
