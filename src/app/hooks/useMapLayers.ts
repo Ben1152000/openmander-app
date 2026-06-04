@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { Map } from 'maplibre-gl';
 import type { MutableRefObject } from 'react';
-import { STATE_CONFIGS, getLayerForZoom } from '@/app/constants/config';
+import { type StateConfig, getLayerForZoom } from '@/app/constants/config';
 import { districtColor, OUTLINE_WIDTH } from '@/app/constants/colors';
 
 const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
@@ -11,17 +11,18 @@ export function useMapLayers(params: {
   mapInitialized: boolean;
   pmtilesBufferReady: boolean;
   loadedState: string;
+  loadedConfig: StateConfig | undefined;
   setLoadingStatus: (s: string) => void;
   setSourcesVersion: React.Dispatch<React.SetStateAction<number>>;
   loadedSourcesRef: MutableRefObject<Set<string>>;
   workerReadyRef: MutableRefObject<boolean>;
 }) {
-  const { mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef } = params;
+  const { mapRef, mapInitialized, pmtilesBufferReady, loadedState, loadedConfig, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef } = params;
 
   // Immediately clear layers and pan to the new state when loadedState changes.
   useEffect(() => {
     if (!mapRef.current || !mapInitialized) return;
-    const config = STATE_CONFIGS[loadedState];
+    const config = loadedConfig;
     if (!config) return;
 
     const map = mapRef.current;
@@ -41,7 +42,7 @@ export function useMapLayers(params: {
 
   useEffect(() => {
     if (!mapRef.current || !mapInitialized || !pmtilesBufferReady) return;
-    const config = STATE_CONFIGS[loadedState];
+    const config = loadedConfig;
     if (!config) return;
  
     const map = mapRef.current;

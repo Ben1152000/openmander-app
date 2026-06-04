@@ -4,7 +4,7 @@ import { Upload, Download, Link, OctagonX } from 'lucide-react';
 import openmanderIcon from '/openmander-icon.svg';
 import { CustomSelect } from './CustomSelect';
 
-import { STATE_CONFIGS } from '@/app/constants/config';
+import type { StateConfig } from '@/app/constants/config';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -34,6 +34,7 @@ interface SidePanelProps {
   numDistricts: number;
   onNumDistrictsChange: (n: number) => void;
   loadedState: string;
+  stateConfigs: Record<string, StateConfig>;
   onLoadMap?: (state: string, districts: number) => void;
   onPendingStateChange?: (state: string) => void;
   activeDistrict: number;
@@ -83,6 +84,7 @@ export function SidePanel(props: SidePanelProps) {
     onTabChange,
     numDistricts,
     loadedState,
+    stateConfigs,
     onLoadMap,
     onPendingStateChange,
     activeDistrict,
@@ -125,7 +127,7 @@ export function SidePanel(props: SidePanelProps) {
   const [showUrlDialog, setShowUrlDialog] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [pendingState, setPendingState] = useState('illinois');
-  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(STATE_CONFIGS['illinois']?.districts ?? numDistricts));
+  const [pendingDistrictsRaw, setPendingDistrictsRaw] = useState(String(stateConfigs['illinois']?.districts ?? numDistricts));
   const [deviationMode, setDeviationMode] = useState<'percent' | 'absolute'>('percent');
   const shiftHeldOnSpinner = useRef(false);
 
@@ -358,24 +360,14 @@ export function SidePanel(props: SidePanelProps) {
                     onChange={(e) => {
                       const s = e.target.value;
                       setPendingState(s);
-                      const d = STATE_CONFIGS[s]?.districts;
+                      const d = stateConfigs[s]?.districts;
                       if (d) setPendingDistrictsRaw(String(d));
                       onPendingStateChange?.(s);
                     }}
                     className="mt-2 flex h-10 w-full items-center justify-between gap-2 rounded-md border-2 border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring/20 transition-colors"
                   >
-                    {[
-                      'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
-                      'connecticut', 'delaware', 'district of columbia', 'florida', 'georgia', 'hawaii', 'idaho',
-                      'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
-                      'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi',
-                      'missouri', 'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey',
-                      'new mexico', 'new york', 'north carolina', 'north dakota', 'ohio', 'oklahoma',
-                      'oregon', 'pennsylvania', 'rhode island', 'south carolina', 'south dakota',
-                      'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
-                      'west virginia', 'wisconsin', 'wyoming',
-                    ].map((value) => (
-                      <option key={value} value={value} disabled={!(value in STATE_CONFIGS)}>
+                    {Object.keys(stateConfigs).sort().map((value) => (
+                      <option key={value} value={value}>
                         {value.replace(/\b\w/g, c => c.toUpperCase())}
                       </option>
                     ))}

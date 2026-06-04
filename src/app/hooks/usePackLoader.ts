@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PMTiles } from 'pmtiles';
 import { loadPackFromDirectory } from '@/lib/loadPack';
 import { loadAndCachePMTiles, cacheAndSetPMTiles, setPMTilesBuffer } from '@/lib/pmtilesCache';
-import { STATE_CONFIGS } from '@/app/constants/config';
+import type { StateConfig } from '@/app/constants/config';
 
 export type LayerZoomRanges = Record<string, { minzoom: number; maxzoom: number }>;
 
@@ -10,6 +10,7 @@ export type PackData = { packFiles: Record<string, Uint8Array> };
 
 export function usePackLoader(
   loadedState: string,
+  config: StateConfig | undefined,
   setLoadingStatus: (s: string) => void,
   onBeforeLoad: () => void,
 ) {
@@ -23,7 +24,6 @@ export function usePackLoader(
   onBeforeLoadRef.current = onBeforeLoad;
 
   useEffect(() => {
-    const config = STATE_CONFIGS[loadedState];
     if (!config) return;
 
     const controller = new AbortController();
@@ -108,7 +108,7 @@ export function usePackLoader(
 
     run();
     return () => controller.abort();
-  }, [loadedState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadedState, config]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived immediately from packFiles keys — no async wait needed.
   const hasVtd = mapData === null

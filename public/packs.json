@@ -1,0 +1,2035 @@
+{
+  "AK": {
+    "AK_2020_webpack": {
+      "pack_id": "AK_2020_webpack",
+      "name": "Alaska",
+      "fips": "02",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -187.652154,
+          51.175092
+        ],
+        [
+          -129.974167,
+          71.439786
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 28568,
+        "county": 30,
+        "group": 504,
+        "state": 1,
+        "tract": 177,
+        "vtd": 456
+      },
+      "packDir": "AK/AK_2020_webpack",
+      "districts": 1
+    }
+  },
+  "AL": {
+    "AL_2020_webpack": {
+      "pack_id": "AL_2020_webpack",
+      "name": "Alabama",
+      "fips": "01",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -88.473227,
+          30.144425
+        ],
+        [
+          -84.888246,
+          35.008028
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 185976,
+        "county": 67,
+        "group": 3925,
+        "state": 1,
+        "tract": 1437,
+        "vtd": 1837
+      },
+      "packDir": "AL/AL_2020_webpack",
+      "districts": 7
+    }
+  },
+  "AR": {
+    "AR_2020_webpack": {
+      "pack_id": "AR_2020_webpack",
+      "name": "Arkansas",
+      "fips": "05",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -94.617859,
+          33.004282
+        ],
+        [
+          -89.640997,
+          36.499749
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 136422,
+        "county": 75,
+        "group": 2294,
+        "state": 1,
+        "tract": 823,
+        "vtd": 2747
+      },
+      "packDir": "AR/AR_2020_webpack",
+      "districts": 4
+    }
+  },
+  "AZ": {
+    "AZ_2020_webpack": {
+      "pack_id": "AZ_2020_webpack",
+      "name": "Arizona",
+      "fips": "04",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -114.8163,
+          31.332341
+        ],
+        [
+          -109.045172,
+          37.003725
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 155444,
+        "county": 15,
+        "group": 4773,
+        "state": 1,
+        "tract": 1765,
+        "vtd": 1538
+      },
+      "packDir": "AZ/AZ_2020_webpack",
+      "districts": 9
+    }
+  },
+  "CA": {
+    "CA_2020_webpack": {
+      "pack_id": "CA_2020_webpack",
+      "name": "California",
+      "fips": "06",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -124.482003,
+          32.528832
+        ],
+        [
+          -114.131211,
+          42.009503
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 519723,
+        "county": 58,
+        "group": 25607,
+        "state": 1,
+        "tract": 9129
+      },
+      "packDir": "CA/CA_2020_webpack",
+      "districts": 52
+    }
+  },
+  "CO": {
+    "CO_2020_webpack": {
+      "pack_id": "CO_2020_webpack",
+      "name": "Colorado",
+      "fips": "08",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -109.060204,
+          36.992449
+        ],
+        [
+          -102.041522,
+          41.003444
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 140345,
+        "county": 64,
+        "group": 4058,
+        "state": 1,
+        "tract": 1447,
+        "vtd": 3108
+      },
+      "packDir": "CO/CO_2020_webpack",
+      "districts": 8
+    }
+  },
+  "CT": {
+    "CT_2020_webpack": {
+      "pack_id": "CT_2020_webpack",
+      "name": "Connecticut",
+      "fips": "09",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -73.727775,
+          40.950943
+        ],
+        [
+          -71.787239,
+          42.050511
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 49926,
+        "county": 8,
+        "group": 2716,
+        "state": 1,
+        "tract": 883,
+        "vtd": 766
+      },
+      "packDir": "CT/CT_2020_webpack",
+      "districts": 5
+    }
+  },
+  "DC": {
+    "DC_2020_webpack": {
+      "pack_id": "DC_2020_webpack",
+      "name": "District of Columbia",
+      "fips": "11",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -77.119759,
+          38.791645
+        ],
+        [
+          -76.909393,
+          38.995845
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 6012,
+        "county": 1,
+        "group": 571,
+        "state": 1,
+        "tract": 206
+      },
+      "packDir": "DC/DC_2020_webpack",
+      "districts": 1
+    }
+  },
+  "DE": {
+    "DE_2020_webpack": {
+      "pack_id": "DE_2020_webpack",
+      "name": "Delaware",
+      "fips": "10",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -75.789023,
+          38.451132
+        ],
+        [
+          -74.984165,
+          39.839516
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 20198,
+        "county": 3,
+        "group": 706,
+        "state": 1,
+        "tract": 262,
+        "vtd": 412
+      },
+      "packDir": "DE/DE_2020_webpack",
+      "districts": 1
+    }
+  },
+  "FL": {
+    "FL_2020_webpack": {
+      "pack_id": "FL_2020_webpack",
+      "name": "Florida",
+      "fips": "12",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -87.634896,
+          24.396308
+        ],
+        [
+          -79.974306,
+          31.000968
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 390066,
+        "county": 67,
+        "group": 13388,
+        "state": 1,
+        "tract": 5160,
+        "vtd": 7211
+      },
+      "packDir": "FL/FL_2020_webpack",
+      "districts": 28
+    }
+  },
+  "GA": {
+    "GA_2020_webpack": {
+      "pack_id": "GA_2020_webpack",
+      "name": "Georgia",
+      "fips": "13",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -85.605165,
+          30.355757
+        ],
+        [
+          -80.78296,
+          35.001303
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 232717,
+        "county": 159,
+        "group": 7446,
+        "state": 1,
+        "tract": 2796,
+        "vtd": 2698
+      },
+      "packDir": "GA/GA_2020_webpack",
+      "districts": 14
+    }
+  },
+  "HI": {
+    "HI_2020_webpack": {
+      "pack_id": "HI_2020_webpack",
+      "name": "Hawaii",
+      "fips": "15",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -178.443593,
+          18.86546
+        ],
+        [
+          -154.755792,
+          28.517269
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 14732,
+        "county": 5,
+        "group": 1083,
+        "state": 1,
+        "tract": 461
+      },
+      "packDir": "HI/HI_2020_webpack",
+      "districts": 2
+    }
+  },
+  "IA": {
+    "IA_2020_webpack": {
+      "pack_id": "IA_2020_webpack",
+      "name": "Iowa",
+      "fips": "19",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -96.639485,
+          40.37544
+        ],
+        [
+          -90.140061,
+          43.501196
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 175199,
+        "county": 99,
+        "group": 2703,
+        "state": 1,
+        "tract": 896,
+        "vtd": 2536
+      },
+      "packDir": "IA/IA_2020_webpack",
+      "districts": 4
+    }
+  },
+  "ID": {
+    "ID_2020_webpack": {
+      "pack_id": "ID_2020_webpack",
+      "name": "Idaho",
+      "fips": "16",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -117.243027,
+          41.988182
+        ],
+        [
+          -111.043495,
+          49.000846
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 81879,
+        "county": 44,
+        "group": 1284,
+        "state": 1,
+        "tract": 456,
+        "vtd": 931
+      },
+      "packDir": "ID/ID_2020_webpack",
+      "districts": 2
+    }
+  },
+  "IL": {
+    "IL_2020_webpack": {
+      "pack_id": "IL_2020_webpack",
+      "name": "Illinois",
+      "fips": "17",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -91.513079,
+          36.970298
+        ],
+        [
+          -87.019935,
+          42.508481
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 369978,
+        "county": 102,
+        "group": 9898,
+        "state": 1,
+        "tract": 3265,
+        "vtd": 10084
+      },
+      "packDir": "IL/IL_2020_webpack",
+      "districts": 17
+    }
+  },
+  "IN": {
+    "IN_2020_webpack": {
+      "pack_id": "IN_2020_webpack",
+      "name": "Indiana",
+      "fips": "18",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -88.097892,
+          37.771672
+        ],
+        [
+          -84.784535,
+          41.761368
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 204568,
+        "county": 92,
+        "group": 5290,
+        "state": 1,
+        "tract": 1696,
+        "vtd": 5159
+      },
+      "packDir": "IN/IN_2020_webpack",
+      "districts": 9
+    }
+  },
+  "KS": {
+    "KS_2020_webpack": {
+      "pack_id": "KS_2020_webpack",
+      "name": "Kansas",
+      "fips": "20",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -102.051769,
+          36.993016
+        ],
+        [
+          -94.588387,
+          40.003166
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 172529,
+        "county": 105,
+        "group": 2461,
+        "state": 1,
+        "tract": 829,
+        "vtd": 4240
+      },
+      "packDir": "KS/KS_2020_webpack",
+      "districts": 4
+    }
+  },
+  "KY": {
+    "KY_2020_webpack": {
+      "pack_id": "KY_2020_webpack",
+      "name": "Kentucky",
+      "fips": "21",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -89.571203,
+          36.497058
+        ],
+        [
+          -81.964788,
+          39.147732
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 132662,
+        "county": 120,
+        "group": 3581,
+        "state": 1,
+        "tract": 1306,
+        "vtd": 3693
+      },
+      "packDir": "KY/KY_2020_webpack",
+      "districts": 6
+    }
+  },
+  "LA": {
+    "LA_2020_webpack": {
+      "pack_id": "LA_2020_webpack",
+      "name": "Louisiana",
+      "fips": "22",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -94.043352,
+          28.855127
+        ],
+        [
+          -88.758388,
+          33.01962
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 142874,
+        "county": 64,
+        "group": 4294,
+        "state": 1,
+        "tract": 1388,
+        "vtd": 3540
+      },
+      "packDir": "LA/LA_2020_webpack",
+      "districts": 6
+    }
+  },
+  "MA": {
+    "MA_2020_webpack": {
+      "pack_id": "MA_2020_webpack",
+      "name": "Massachusetts",
+      "fips": "25",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -73.50821,
+          41.187053
+        ],
+        [
+          -69.858861,
+          42.886778
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 107278,
+        "county": 14,
+        "group": 5116,
+        "state": 1,
+        "tract": 1620,
+        "vtd": 2157
+      },
+      "packDir": "MA/MA_2020_webpack",
+      "districts": 9
+    }
+  },
+  "MD": {
+    "MD_2020_webpack": {
+      "pack_id": "MD_2020_webpack",
+      "name": "Maryland",
+      "fips": "24",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -79.487651,
+          37.886605
+        ],
+        [
+          -74.986282,
+          39.723037
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 83827,
+        "county": 24,
+        "group": 4079,
+        "state": 1,
+        "tract": 1475,
+        "vtd": 2042
+      },
+      "packDir": "MD/MD_2020_webpack",
+      "districts": 8
+    }
+  },
+  "ME": {
+    "ME_2020_webpack": {
+      "pack_id": "ME_2020_webpack",
+      "name": "Maine",
+      "fips": "23",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -71.083928,
+          42.917126
+        ],
+        [
+          -66.885444,
+          47.459833
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 47138,
+        "county": 16,
+        "group": 1184,
+        "state": 1,
+        "tract": 407
+      },
+      "packDir": "ME/ME_2020_webpack",
+      "districts": 2
+    }
+  },
+  "MI": {
+    "MI_2020_webpack": {
+      "pack_id": "MI_2020_webpack",
+      "name": "Michigan",
+      "fips": "26",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -90.418392,
+          41.696118
+        ],
+        [
+          -82.122971,
+          48.306063
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 254730,
+        "county": 83,
+        "group": 8386,
+        "state": 1,
+        "tract": 3017,
+        "vtd": 4805
+      },
+      "packDir": "MI/MI_2020_webpack",
+      "districts": 13
+    }
+  },
+  "MN": {
+    "MN_2020_webpack": {
+      "pack_id": "MN_2020_webpack",
+      "name": "Minnesota",
+      "fips": "27",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -97.239093,
+          43.499361
+        ],
+        [
+          -89.483385,
+          49.384479
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 198705,
+        "county": 87,
+        "group": 4706,
+        "state": 1,
+        "tract": 1505,
+        "vtd": 4110
+      },
+      "packDir": "MN/MN_2020_webpack",
+      "districts": 8
+    }
+  },
+  "MO": {
+    "MO_2020_webpack": {
+      "pack_id": "MO_2020_webpack",
+      "name": "Missouri",
+      "fips": "29",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -95.774704,
+          35.995685
+        ],
+        [
+          -89.098968,
+          40.61364
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 253632,
+        "county": 115,
+        "group": 5031,
+        "state": 1,
+        "tract": 1654,
+        "vtd": 4604
+      },
+      "packDir": "MO/MO_2020_webpack",
+      "districts": 8
+    }
+  },
+  "MS": {
+    "MS_2020_webpack": {
+      "pack_id": "MS_2020_webpack",
+      "name": "Mississippi",
+      "fips": "28",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -91.655009,
+          30.139845
+        ],
+        [
+          -88.097888,
+          34.996099
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 112241,
+        "county": 82,
+        "group": 2445,
+        "state": 1,
+        "tract": 878,
+        "vtd": 1834
+      },
+      "packDir": "MS/MS_2020_webpack",
+      "districts": 4
+    }
+  },
+  "MT": {
+    "MT_2020_webpack": {
+      "pack_id": "MT_2020_webpack",
+      "name": "Montana",
+      "fips": "30",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -116.049153,
+          44.357915
+        ],
+        [
+          -104.039694,
+          49.001109
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 88417,
+        "county": 56,
+        "group": 900,
+        "state": 1,
+        "tract": 319,
+        "vtd": 666
+      },
+      "packDir": "MT/MT_2020_webpack",
+      "districts": 2
+    }
+  },
+  "NC": {
+    "NC_2020_webpack": {
+      "pack_id": "NC_2020_webpack",
+      "name": "North Carolina",
+      "fips": "37",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -84.321821,
+          33.752878
+        ],
+        [
+          -75.400119,
+          36.588137
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 236638,
+        "county": 100,
+        "group": 7111,
+        "state": 1,
+        "tract": 2672,
+        "vtd": 2666
+      },
+      "packDir": "NC/NC_2020_webpack",
+      "districts": 14
+    }
+  },
+  "ND": {
+    "ND_2020_webpack": {
+      "pack_id": "ND_2020_webpack",
+      "name": "North Dakota",
+      "fips": "38",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -104.049012,
+          45.935072
+        ],
+        [
+          -96.554411,
+          49.000561
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 84566,
+        "county": 53,
+        "group": 632,
+        "state": 1,
+        "tract": 228,
+        "vtd": 421
+      },
+      "packDir": "ND/ND_2020_webpack",
+      "districts": 1
+    }
+  },
+  "NE": {
+    "NE_2020_webpack": {
+      "pack_id": "NE_2020_webpack",
+      "name": "Nebraska",
+      "fips": "31",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -104.053514,
+          39.999932
+        ],
+        [
+          -95.30829,
+          43.001707
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 119103,
+        "county": 93,
+        "group": 1648,
+        "state": 1,
+        "tract": 553,
+        "vtd": 1402
+      },
+      "packDir": "NE/NE_2020_webpack",
+      "districts": 3
+    }
+  },
+  "NH": {
+    "NH_2020_webpack": {
+      "pack_id": "NH_2020_webpack",
+      "name": "New Hampshire",
+      "fips": "33",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -72.557124,
+          42.697042
+        ],
+        [
+          -70.575094,
+          45.305778
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 31948,
+        "county": 10,
+        "group": 997,
+        "state": 1,
+        "tract": 350,
+        "vtd": 326
+      },
+      "packDir": "NH/NH_2020_webpack",
+      "districts": 2
+    }
+  },
+  "NJ": {
+    "NJ_2020_webpack": {
+      "pack_id": "NJ_2020_webpack",
+      "name": "New Jersey",
+      "fips": "34",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -75.563586,
+          38.788657
+        ],
+        [
+          -73.88506,
+          41.357607
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 137972,
+        "county": 21,
+        "group": 6599,
+        "state": 1,
+        "tract": 2181,
+        "vtd": 6361
+      },
+      "packDir": "NJ/NJ_2020_webpack",
+      "districts": 12
+    }
+  },
+  "NM": {
+    "NM_2020_webpack": {
+      "pack_id": "NM_2020_webpack",
+      "name": "New Mexico",
+      "fips": "35",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -109.050431,
+          31.33216
+        ],
+        [
+          -103.002043,
+          37.000233
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 107215,
+        "county": 33,
+        "group": 1614,
+        "state": 1,
+        "tract": 612,
+        "vtd": 1977
+      },
+      "packDir": "NM/NM_2020_webpack",
+      "districts": 3
+    }
+  },
+  "NV": {
+    "NV_2020_webpack": {
+      "pack_id": "NV_2020_webpack",
+      "name": "Nevada",
+      "fips": "32",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -120.006473,
+          35.001857
+        ],
+        [
+          -114.039461,
+          42.001842
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 57409,
+        "county": 17,
+        "group": 1963,
+        "state": 1,
+        "tract": 779,
+        "vtd": 2102
+      },
+      "packDir": "NV/NV_2020_webpack",
+      "districts": 4
+    }
+  },
+  "NY": {
+    "NY_2020_webpack": {
+      "pack_id": "NY_2020_webpack",
+      "name": "New York",
+      "fips": "36",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -79.76259,
+          40.476578
+        ],
+        [
+          -71.777491,
+          45.015865
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 288819,
+        "county": 62,
+        "group": 16070,
+        "state": 1,
+        "tract": 5411,
+        "vtd": 14191
+      },
+      "packDir": "NY/NY_2020_webpack",
+      "districts": 26
+    }
+  },
+  "OH": {
+    "OH_2020_webpack": {
+      "pack_id": "OH_2020_webpack",
+      "name": "Ohio",
+      "fips": "39",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -84.820305,
+          38.403423
+        ],
+        [
+          -80.518705,
+          42.327132
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 276428,
+        "county": 88,
+        "group": 9472,
+        "state": 1,
+        "tract": 3168,
+        "vtd": 8941
+      },
+      "packDir": "OH/OH_2020_webpack",
+      "districts": 15
+    }
+  },
+  "OK": {
+    "OK_2020_webpack": {
+      "pack_id": "OK_2020_webpack",
+      "name": "Oklahoma",
+      "fips": "40",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -103.002413,
+          33.615787
+        ],
+        [
+          -94.431014,
+          37.002312
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 180154,
+        "county": 77,
+        "group": 3374,
+        "state": 1,
+        "tract": 1205,
+        "vtd": 1947
+      },
+      "packDir": "OK/OK_2020_webpack",
+      "districts": 5
+    }
+  },
+  "OR": {
+    "OR_2020_webpack": {
+      "pack_id": "OR_2020_webpack",
+      "name": "Oregon",
+      "fips": "41",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -124.703541,
+          41.992082
+        ],
+        [
+          -116.463262,
+          46.299099
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 130807,
+        "county": 36,
+        "group": 2970,
+        "state": 1,
+        "tract": 1001
+      },
+      "packDir": "OR/OR_2020_webpack",
+      "districts": 6
+    }
+  },
+  "PA": {
+    "PA_2020_webpack": {
+      "pack_id": "PA_2020_webpack",
+      "name": "Pennsylvania",
+      "fips": "42",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -80.519851,
+          39.719799
+        ],
+        [
+          -74.689561,
+          42.516072
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 336985,
+        "county": 67,
+        "group": 10173,
+        "state": 1,
+        "tract": 3446,
+        "vtd": 9178
+      },
+      "packDir": "PA/PA_2020_webpack",
+      "districts": 17
+    }
+  },
+  "RI": {
+    "RI_2020_webpack": {
+      "pack_id": "RI_2020_webpack",
+      "name": "Rhode Island",
+      "fips": "44",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -71.907258,
+          41.095834
+        ],
+        [
+          -71.088571,
+          42.018799
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 25649,
+        "county": 5,
+        "group": 792,
+        "state": 1,
+        "tract": 250,
+        "vtd": 423
+      },
+      "packDir": "RI/RI_2020_webpack",
+      "districts": 2
+    }
+  },
+  "SC": {
+    "SC_2020_webpack": {
+      "pack_id": "SC_2020_webpack",
+      "name": "South Carolina",
+      "fips": "45",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -83.353928,
+          31.995954
+        ],
+        [
+          -78.499301,
+          35.215485
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 146844,
+        "county": 46,
+        "group": 3408,
+        "state": 1,
+        "tract": 1323,
+        "vtd": 2268
+      },
+      "packDir": "SC/SC_2020_webpack",
+      "districts": 7
+    }
+  },
+  "SD": {
+    "SD_2020_webpack": {
+      "pack_id": "SD_2020_webpack",
+      "name": "South Dakota",
+      "fips": "46",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -104.057879,
+          42.479686
+        ],
+        [
+          -96.436472,
+          45.945377
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 71383,
+        "county": 66,
+        "group": 694,
+        "state": 1,
+        "tract": 242,
+        "vtd": 785
+      },
+      "packDir": "SD/SD_2020_webpack",
+      "districts": 1
+    }
+  },
+  "TN": {
+    "TN_2020_webpack": {
+      "pack_id": "TN_2020_webpack",
+      "name": "Tennessee",
+      "fips": "47",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -90.310491,
+          34.982924
+        ],
+        [
+          -81.6469,
+          36.678255
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 179717,
+        "county": 95,
+        "group": 4562,
+        "state": 1,
+        "tract": 1701,
+        "vtd": 1965
+      },
+      "packDir": "TN/TN_2020_webpack",
+      "districts": 9
+    }
+  },
+  "TX": {
+    "TX_2020_webpack": {
+      "pack_id": "TX_2020_webpack",
+      "name": "Texas",
+      "fips": "48",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -106.645646,
+          25.837164
+        ],
+        [
+          -93.508039,
+          36.500704
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 668757,
+        "county": 254,
+        "group": 18638,
+        "state": 1,
+        "tract": 6896,
+        "vtd": 9007
+      },
+      "packDir": "TX/TX_2020_webpack",
+      "districts": 38
+    }
+  },
+  "UT": {
+    "UT_2020_webpack": {
+      "pack_id": "UT_2020_webpack",
+      "name": "Utah",
+      "fips": "49",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -114.052885,
+          36.997657
+        ],
+        [
+          -109.041572,
+          42.001702
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 71207,
+        "county": 29,
+        "group": 2020,
+        "state": 1,
+        "tract": 716,
+        "vtd": 2745
+      },
+      "packDir": "UT/UT_2020_webpack",
+      "districts": 4
+    }
+  },
+  "VA": {
+    "VA_2020_webpack": {
+      "pack_id": "VA_2020_webpack",
+      "name": "Virginia",
+      "fips": "51",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -83.675395,
+          36.540852
+        ],
+        [
+          -75.166435,
+          39.466012
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 163491,
+        "county": 133,
+        "group": 5963,
+        "state": 1,
+        "tract": 2198,
+        "vtd": 2465
+      },
+      "packDir": "VA/VA_2020_webpack",
+      "districts": 11
+    }
+  },
+  "VT": {
+    "VT_2020_webpack": {
+      "pack_id": "VT_2020_webpack",
+      "name": "Vermont",
+      "fips": "50",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -73.437905,
+          42.726933
+        ],
+        [
+          -71.465047,
+          45.016658
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 24611,
+        "county": 14,
+        "group": 552,
+        "state": 1,
+        "tract": 193,
+        "vtd": 285
+      },
+      "packDir": "VT/VT_2020_webpack",
+      "districts": 1
+    }
+  },
+  "WA": {
+    "WA_2020_webpack": {
+      "pack_id": "WA_2020_webpack",
+      "name": "Washington",
+      "fips": "53",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -124.848974,
+          45.543541
+        ],
+        [
+          -116.916071,
+          49.002439
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 158093,
+        "county": 39,
+        "group": 5311,
+        "state": 1,
+        "tract": 1784
+      },
+      "packDir": "WA/WA_2020_webpack",
+      "districts": 10
+    }
+  },
+  "WI": {
+    "WI_2020_webpack": {
+      "pack_id": "WI_2020_webpack",
+      "name": "Wisconsin",
+      "fips": "55",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -92.889433,
+          42.49172
+        ],
+        [
+          -86.249548,
+          47.309822
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 203059,
+        "county": 72,
+        "group": 4692,
+        "state": 1,
+        "tract": 1542,
+        "vtd": 7059
+      },
+      "packDir": "WI/WI_2020_webpack",
+      "districts": 8
+    }
+  },
+  "WV": {
+    "WV_2020_webpack": {
+      "pack_id": "WV_2020_webpack",
+      "name": "West Virginia",
+      "fips": "54",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -82.644591,
+          37.20154
+        ],
+        [
+          -77.719519,
+          40.638801
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 72558,
+        "county": 55,
+        "group": 1639,
+        "state": 1,
+        "tract": 546
+      },
+      "packDir": "WV/WV_2020_webpack",
+      "districts": 2
+    }
+  },
+  "WY": {
+    "WY_2020_webpack": {
+      "pack_id": "WY_2020_webpack",
+      "name": "Wyoming",
+      "fips": "56",
+      "version": "2",
+      "crs": "EPSG:4269",
+      "formats": {
+        "data": "csv"
+      },
+      "bounds": [
+        [
+          -111.054558,
+          40.994772
+        ],
+        [
+          -104.052245,
+          45.005815
+        ]
+      ],
+      "levels": [
+        "state",
+        "county",
+        "tract",
+        "group",
+        "vtd",
+        "block"
+      ],
+      "counts": {
+        "block": 53769,
+        "county": 23,
+        "group": 457,
+        "state": 1,
+        "tract": 160,
+        "vtd": 512
+      },
+      "packDir": "WY/WY_2020_webpack",
+      "districts": 1
+    }
+  }
+}

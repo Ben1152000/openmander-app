@@ -10,9 +10,10 @@ import { UnitTooltip } from '@/app/components/UnitTooltip';
 import { DistrictTooltip } from '@/app/components/DistrictTooltip';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
-  DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, STATE_CONFIGS, getLayerForZoom,
+  DEFAULT_ZOOM, DEFAULT_NUM_DISTRICTS, DEFAULT_LAYER, IL_DEFAULT_BOUNDS, getLayerForZoom,
   ZOOM_THRESHOLD_VTD_TO_BLOCK, midZoomLayer, isPolarState, POLAR_ZOOM_OFFSET,
 } from './constants/config';
+import { usePackIndex } from './hooks/usePackIndex';
 import { OUTLINE_OPACITY } from './constants/colors';
 import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from './constants/metrics';
 import { useSidebarResize } from './hooks/useSidebarResize';
@@ -185,14 +186,17 @@ export default function App() {
   const applyWorkerStatsRef = useRef<((ds: any[], rs: any) => void) | null>(null);
   const applyMetricsRef = useRef<((...args: any[]) => void) | null>(null);
 
+  const stateConfigs = usePackIndex();
+
   // Pack loading (fetches pack files, PMTiles buffer)
   const { mapData, loadingPack, pmtilesBufferReady, layerZoomRanges, hasVtd, resetPmtilesBuffer } = usePackLoader(
     loadedState,
+    stateConfigs[loadedState],
     setLoadingStatus,
     () => { setDistrictGeoJson(null); },
   );
   hasVtdRef.current = hasVtd;
-  const loadedConfig = loadedState ? STATE_CONFIGS[loadedState] : undefined;
+  const loadedConfig = loadedState ? stateConfigs[loadedState] : undefined;
   polarZoomOffsetRef.current = loadedConfig && isPolarState(loadedConfig) ? POLAR_ZOOM_OFFSET : 0;
 
   // CSV metric data (refs, populated via worker 'metrics' message)
@@ -208,7 +212,7 @@ export default function App() {
   applyMetricsRef.current = applyMetrics;
 
   // Map layers (PMTiles vector tile source setup)
-  useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef });
+  useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, loadedConfig, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef });
 
   // Apply layer override (or revert to zoom-based layer when override is cleared)
   useEffect(() => {
@@ -477,7 +481,7 @@ export default function App() {
     const map = new maplibregl.Map({
       container: mapDivRef.current,
       style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-      bounds: STATE_CONFIGS['illinois'].bounds,
+      bounds: stateConfigs['illinois']?.bounds ?? IL_DEFAULT_BOUNDS,
       fitBoundsOptions: { padding: { top: 80, right: 32, bottom: 32, left: 32 } },
       minZoom: 4.0,
       antialias: true,
@@ -708,10 +712,11 @@ export default function App() {
     numDistricts,
     onNumDistrictsChange: setNumDistricts,
     loadedState,
+    stateConfigs,
     onLoadMap: handleLoadMap,
     onPendingStateChange: (state: string) => {
       if (loadedState) return;
-      const config = STATE_CONFIGS[state];
+      const config = stateConfigs[state];
       if (config && mapRef.current) {
         mapRef.current.stop();
         mapRef.current.fitBounds(config.bounds, { animate: true, padding: { top: 80, right: 32, bottom: 32, left: 32 }, curve: 0.5 });
