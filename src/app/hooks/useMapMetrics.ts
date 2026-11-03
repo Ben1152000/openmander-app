@@ -1,83 +1,41 @@
 import { useCallback, useRef } from 'react';
-import type { EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
+import { emptyUnitData, type LayerColumns, type UnitDataStore } from '@/app/lib/unitData';
+import type { ReadyPayload } from '@/workers/workerPlan';
 
-export type BlockParents = { county: string; vtd: string; tract: string; group: string };
-
+/**
+ * Holds per-unit data (geo_ids, names, block→parent indices, data columns) received
+ * from the plan worker. Everything is indexed by unit index, matching the PMTiles
+ * `index` feature property.
+ */
 export function useMapMetrics() {
-  const partisanLeanRef = useRef<Record<string, number>>({});
-  const ethnicityDataRef = useRef<Partial<Record<EthnicityMetric, Record<string, number>>>>({});
-  const scalarDataRef = useRef<Partial<Record<ScalarMetric, Record<string, number>>>>({});
-  const geoIdByIndexRef = useRef<Record<string, Record<number, string>>>({});
-  const blockToParentsRef = useRef<Record<string, BlockParents>>({});
-  const parentBlockIndicesRef = useRef<Record<string, Record<string, number[]>>>({});
-  const unitNamesRef = useRef<Record<string, Record<string, string>>>({});
-  const unitPopulationRef = useRef<Record<string, number>>({});
-  const unitElectionVotesRef = useRef<Record<string, { dem: number; rep: number; total: number }>>({});
-  const unitEthnicCountsRef = useRef<Partial<Record<EthnicityMetric, Record<string, number>>>>({});
-  const unitLandKm2Ref = useRef<Record<string, number>>({});
-  const unitVapRef = useRef<Record<string, number>>({});
-  const electionNameRef = useRef<string>('');
-  const censusNameRef = useRef<string>('');
+  const unitDataRef = useRef<UnitDataStore>(emptyUnitData());
+  // Kept as its own ref because painting only needs the geo_id lookup.
+  const geoIdByIndexRef = useRef<Record<string, string[]>>({});
 
   const clearMetrics = useCallback(() => {
-    partisanLeanRef.current = {};
+    unitDataRef.current = emptyUnitData();
     geoIdByIndexRef.current = {};
-    scalarDataRef.current = {};
-    ethnicityDataRef.current = {};
-    blockToParentsRef.current = {};
-    parentBlockIndicesRef.current = {};
-    unitNamesRef.current = {};
-    unitPopulationRef.current = {};
-    unitElectionVotesRef.current = {};
-    unitEthnicCountsRef.current = {};
-    unitLandKm2Ref.current = {};
-    unitVapRef.current = {};
-    electionNameRef.current = '';
-    censusNameRef.current = '';
   }, []);
 
-  // Seed geoIdByIndex without touching partisan/ethnicity/scalar data.
-  const seedGeoIdIndex = useCallback((geoIdByIndex: Record<string, Record<number, string>>) => {
-    geoIdByIndexRef.current = { ...geoIdByIndexRef.current, ...geoIdByIndex };
+  /** Store unit identity data from the worker's 'ready' message. */
+  const applyReady = useCallback((payload: ReadyPayload) => {
+    unitDataRef.current = {
+      ...emptyUnitData(),
+      geoIds: payload.geoIdIndex,
+      names: payload.unitNames,
+      blockParents: payload.blockParents,
+      seriesNames: payload.seriesNames,
+    };
+    geoIdByIndexRef.current = payload.geoIdIndex;
   }, []);
 
-  const applyMetrics = useCallback((
-    partisanLean: Record<string, number>,
-    geoIdByIndex: Record<string, Record<number, string>>,
-    scalarData: Partial<Record<ScalarMetric, Record<string, number>>>,
-    ethnicityData: Partial<Record<EthnicityMetric, Record<string, number>>>,
-    blockToParents: Record<string, BlockParents>,
-    parentBlockIndices: Record<string, Record<string, number[]>>,
-    unitNames: Record<string, Record<string, string>>,
-    unitPopulation: Record<string, number>,
-    unitElectionVotes: Record<string, { dem: number; rep: number; total: number }>,
-    unitEthnicCounts: Partial<Record<EthnicityMetric, Record<string, number>>>,
-    unitLandKm2: Record<string, number>,
-    unitVap: Record<string, number>,
-    electionName: string,
-    censusName: string,
-  ) => {
-    partisanLeanRef.current = partisanLean;
-    geoIdByIndexRef.current = geoIdByIndex;
-    scalarDataRef.current = scalarData;
-    ethnicityDataRef.current = ethnicityData;
-    blockToParentsRef.current = blockToParents;
-    parentBlockIndicesRef.current = parentBlockIndices;
-    unitNamesRef.current = unitNames;
-    unitPopulationRef.current = unitPopulation;
-    unitElectionVotesRef.current = unitElectionVotes;
-    unitEthnicCountsRef.current = unitEthnicCounts;
-    unitLandKm2Ref.current = unitLandKm2;
-    unitVapRef.current = unitVap;
-    electionNameRef.current = electionName;
-    censusNameRef.current = censusName;
+  /** Merge fetched columns and set the active series selection. */
+  const applyColumns = useCallback((columns: LayerColumns, electionSeries: string, censusSeries: string) => {
+    const store = unitDataRef.current;
+    const merged: LayerColumns = { ...store.columns };
+    for (const [layer, cols] of Object.entries(columns)) merged[layer] = { ...merged[layer], ...cols };
+    unitDataRef.current = { ...store, columns: merged, electionSeries, censusSeries };
   }, []);
 
-  return {
-    partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef,
-    blockToParentsRef, parentBlockIndicesRef,
-    unitNamesRef, unitPopulationRef,
-    unitElectionVotesRef, unitEthnicCountsRef, unitLandKm2Ref, unitVapRef, electionNameRef, censusNameRef,
-    clearMetrics, applyMetrics, seedGeoIdIndex,
-  };
+  return { unitDataRef, geoIdByIndexRef, clearMetrics, applyReady, applyColumns };
 }

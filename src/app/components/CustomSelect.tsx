@@ -11,12 +11,15 @@ export interface CustomSelectOption {
   group?: string;
 }
 
-export function CustomSelect({ value, onChange, options, prefix, dropdownAlign = 'left' }: {
+export function CustomSelect({ value, onChange, options, prefix, dropdownAlign = 'left', fullWidth = false }: {
   value: string;
   onChange: (v: string) => void;
   options: CustomSelectOption[];
   prefix?: ReactNode;
   dropdownAlign?: 'left' | 'right';
+  /** Fill the parent (e.g. a bordered form field) so the whole field is clickable.
+   *  The parent should have no horizontal padding; the button supplies it. */
+  fullWidth?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -53,14 +56,14 @@ export function CustomSelect({ value, onChange, options, prefix, dropdownAlign =
   const displayLabel = selected?.buttonLabel ?? selected?.label ?? value;
 
   return (
-    <div ref={ref} className="flex items-center h-full">
+    <div ref={ref} className={`flex items-center h-full ${fullWidth ? 'w-full min-w-0' : ''}`}>
       <button
-        className="flex items-center gap-1.5 h-full px-0 text-sm font-medium text-gray-700 cursor-pointer"
+        className={`flex items-center gap-1.5 h-full text-sm font-medium text-gray-700 cursor-pointer ${fullWidth ? 'w-full min-w-0 px-3' : 'px-0'}`}
         onClick={() => setOpen(v => !v)}
       >
         {prefix}
-        {displayLabel}
-        <ChevronDown className="w-3 h-3 text-gray-400" />
+        <span className={fullWidth ? 'truncate' : undefined}>{displayLabel}</span>
+        <ChevronDown className="w-3 h-3 shrink-0 text-gray-400" />
       </button>
       {open && (
         <div ref={dropdownRef} className={`absolute top-full mt-1 bg-gray-100 rounded-lg shadow-xl border border-gray-200 p-1 z-50 flex flex-col min-w-full ${dropdownAlign === 'right' ? 'right-0' : 'left-0'}`}>

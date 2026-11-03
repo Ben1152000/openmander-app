@@ -1,24 +1,20 @@
 import { Fragment, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
-import type { EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
-import { ETHNICITY_METRICS, ethCatFromPcts, ethCatFullLabel } from '@/app/constants/metrics';
+import type { EthnicityMetric } from '@/app/constants/metrics';
+import { ETHNICITY_METRICS, ethCatFullLabel } from '@/app/constants/metrics';
+import {
+  unitValues, ethnicityCategory, scalarValue, electionSeriesLabel, censusSeriesLabel,
+  type UnitDataStore,
+} from '@/app/lib/unitData';
 
 interface UnitTooltipProps {
   geoId: string;
   layer: string;
+  index: number;
   x: number;
   y: number;
   districtColorMetric: string;
-  unitNamesRef: MutableRefObject<Record<string, Record<string, string>>>;
-  unitPopulationRef: MutableRefObject<Record<string, number>>;
-  scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
-  ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
-  unitElectionVotesRef: MutableRefObject<Record<string, { dem: number; rep: number; total: number }>>;
-  unitEthnicCountsRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
-  unitLandKm2Ref: MutableRefObject<Record<string, number>>;
-  unitVapRef: MutableRefObject<Record<string, number>>;
-  electionNameRef: MutableRefObject<string>;
-  censusNameRef: MutableRefObject<string>;
+  unitDataRef: MutableRefObject<UnitDataStore>;
 }
 
 type Row = { label: string; count: string; pct?: string; color?: string; bold?: boolean };
@@ -37,14 +33,14 @@ function fmt(n: number, decimals = 0): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
 }
 
-export function UnitTooltip({
-  geoId, layer, x, y, districtColorMetric,
-  unitNamesRef, unitPopulationRef, scalarDataRef, ethnicityDataRef,
-  unitElectionVotesRef, unitEthnicCountsRef, unitLandKm2Ref, unitVapRef, electionNameRef, censusNameRef,
-}: UnitTooltipProps) {
-  const name = unitNamesRef.current[layer]?.[geoId];
-  const population = unitPopulationRef.current[geoId];
+export function UnitTooltip({ geoId, layer, index, x, y, districtColorMetric, unitDataRef }: UnitTooltipProps) {
+  const store = unitDataRef.current;
+  const name = store.names[layer]?.[index];
+  const v = unitValues(store, layer, index);
+  const population = v.population;
   const metric = districtColorMetric;
+  const electionName = electionSeriesLabel(store.electionSeries);
+  const censusName = censusSeriesLabel(store.censusSeries);
 
   const sections: Section[] = [];
 
@@ -55,61 +51,48 @@ export function UnitTooltip({
   }
 
   if (metric === 'population_density') {
-    const landKm2 = unitLandKm2Ref.current[geoId];
-    const stored = scalarDataRef.current['population_density']?.[geoId];
+    const landKm2 = v.landKm2;
+    const stored = scalarValue(v, 'population_density');
     if (landKm2 != null) censusRows.push({ label: 'Land area', count: `${fmt(landKm2, landKm2 < 10 ? 2 : landKm2 < 100 ? 1 : 0)} km²` });
     if (stored != null && stored >= 0) censusRows.push({ label: 'Density', count: `${fmt(Math.round(Math.expm1(stored)))}/km²` });
   } else if (ETHNICITY_METRICS.includes(metric as EthnicityMetric) || metric === 'ethnicity') {
     const pop = population ?? 0;
     for (const [key, label] of ETH_LABELS) {
-      const count = unitEthnicCountsRef.current[key]?.[geoId];
+      const count = v.ethnicCounts[key];
       if (count != null) {
         censusRows.push({ label, count: fmt(count), pct: pop > 0 ? `${fmt(count / pop * 100, 1)}%` : undefined, bold: key === metric });
       }
     }
-    if (metric === 'ethnicity' && censusRows.length === 1) {
-      // No ethnic count data; fall back to category label
-      const white = ethnicityDataRef.current['white_pct']?.[geoId] ?? -1;
-      const nwPcts = (['black_pct', 'hispanic_pct', 'asian_pct', 'native_pct', 'pacific_pct'] as EthnicityMetric[])
-        .map(k => ethnicityDataRef.current[k]?.[geoId] ?? -1);
-      censusRows.push({ label: 'Category', count: ethCatFullLabel(ethCatFromPcts(white, nwPcts)) });
-    }
   }
 
-  let censusHeader = censusNameRef.current || 'Census';
+  let censusHeader = censusName || 'Census';
   if (metric === 'ethnicity') {
-    const white = ethnicityDataRef.current['white_pct']?.[geoId] ?? -1;
-    const nwPcts = (['black_pct', 'hispanic_pct', 'asian_pct', 'native_pct', 'pacific_pct'] as EthnicityMetric[])
-      .map(k => ethnicityDataRef.current[k]?.[geoId] ?? -1);
-    censusHeader = `${censusHeader} · ${ethCatFullLabel(ethCatFromPcts(white, nwPcts))}`;
+    censusHeader = `${censusHeader} · ${ethCatFullLabel(ethnicityCategory(v))}`;
   }
 
   if (censusRows.length > 0) sections.push({ header: censusHeader, rows: censusRows });
 
   // --- Election section ---
   if (metric === 'partisan') {
-    const votes = unitElectionVotesRef.current[geoId];
-    if (votes) {
-      const total = votes.dem + votes.rep;
-      const demPct = total > 0 ? `${fmt(votes.dem / total * 100, 1)}%` : undefined;
-      const repPct = total > 0 ? `${fmt(votes.rep / total * 100, 1)}%` : undefined;
+    if (v.dem != null && v.rep != null) {
+      const total = v.dem + v.rep;
+      const demPct = total > 0 ? `${fmt(v.dem / total * 100, 1)}%` : undefined;
+      const repPct = total > 0 ? `${fmt(v.rep / total * 100, 1)}%` : undefined;
       sections.push({
-        header: electionNameRef.current || 'Election',
+        header: electionName || 'Election',
         rows: [
-          { label: 'Dem', count: fmt(votes.dem), pct: demPct, color: 'text-blue-600' },
-          { label: 'Rep', count: fmt(votes.rep), pct: repPct, color: 'text-red-600' },
+          { label: 'Dem', count: fmt(v.dem), pct: demPct, color: 'text-blue-600' },
+          { label: 'Rep', count: fmt(v.rep), pct: repPct, color: 'text-red-600' },
         ],
       });
     }
   } else if (metric === 'turnout') {
     const electionRows: Row[] = [];
-    const vap = unitVapRef.current[geoId];
-    const v = scalarDataRef.current['turnout']?.[geoId];
-    if (vap != null) electionRows.push({ label: 'VAP', count: fmt(vap) });
-    const votes = unitElectionVotesRef.current[geoId];
-    if (votes) electionRows.push({ label: 'Votes', count: fmt(votes.total) });
-    if (v != null && v >= 0) electionRows.push({ label: 'Turnout', count: `${fmt(v * 100, 1)}%` });
-    if (electionRows.length > 0) sections.push({ header: electionNameRef.current || 'Election', rows: electionRows });
+    const turnout = scalarValue(v, 'turnout');
+    if (v.vap != null) electionRows.push({ label: 'VAP', count: fmt(v.vap) });
+    if (v.votes != null) electionRows.push({ label: 'Votes', count: fmt(v.votes) });
+    if (turnout != null && turnout >= 0) electionRows.push({ label: 'Turnout', count: `${fmt(turnout * 100, 1)}%` });
+    if (electionRows.length > 0) sections.push({ header: electionName || 'Election', rows: electionRows });
   }
 
   const totalRows = sections.reduce((n, s) => n + s.rows.length, 0);

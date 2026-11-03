@@ -5,6 +5,11 @@ export class WasmMap {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Values of one data series for every unit in a layer, in index order.
+     * Returns `undefined` if the series does not exist.
+     */
+    column(layer: string | null | undefined, series: string): Float64Array | undefined;
+    /**
      * Return geo_ids in index order for every layer, as a JSON string.
      * Shape: `{"block": ["geo1", "geo2", ...], "county": [...], ...}`
      * Used by the plan worker to populate geoIdByIndex immediately on ready,
@@ -21,6 +26,15 @@ export class WasmMap {
      */
     constructor(files: any);
     /**
+     * For each unit in `child`, the index of its parent unit in `parent`
+     * (0xFFFFFFFF if none).
+     */
+    parent_indices(child: string, parent: string): Uint32Array;
+    /**
+     * Names of all numeric data series in a layer (sorted), as a JS string array.
+     */
+    series_names(layer?: string | null): any;
+    /**
      * Export layer geometries as GeoJSON FeatureCollection.
      * Returns GeoJSON as a JavaScript object.
      * bounds: Optional bounding box [min_lon, min_lat, max_lon, max_lat] to filter features.
@@ -31,6 +45,10 @@ export class WasmMap {
      * Returns SVG XML string (UI can set innerHTML or create Blob).
      */
     to_svg(layer?: string | null, series?: string | null): string;
+    /**
+     * Human-readable unit names for a layer, in index order, as a JS string array.
+     */
+    unit_names(layer?: string | null): any;
 }
 
 export class WasmPlan {
@@ -198,11 +216,15 @@ export interface InitOutput {
     readonly wasmplan_to_csv_text: (a: number) => [number, number, number, number];
     readonly wasmplan_to_geojson: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly __wbg_wasmmap_free: (a: number, b: number) => void;
+    readonly wasmmap_column: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmmap_geo_id_index_json: (a: number) => [number, number, number, number];
     readonly wasmmap_layers_present: (a: number) => [number, number, number];
     readonly wasmmap_new: (a: any) => [number, number, number];
+    readonly wasmmap_parent_indices: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly wasmmap_series_names: (a: number, b: number, c: number) => [number, number, number];
     readonly wasmmap_to_geojson: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly wasmmap_to_svg: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly wasmmap_unit_names: (a: number, b: number, c: number) => [number, number, number];
     readonly init: () => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

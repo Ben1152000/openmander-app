@@ -23,16 +23,14 @@ import {
   ETH_COLOR_EXPR, OUTLINE_OPACITY,
 } from '@/app/constants/colors';
 import { midZoomLayer } from '@/app/constants/config';
-import { ETHNICITY_METRICS, SCALAR_METRICS, NON_WHITE_GROUPS, ethCatFromPcts } from '@/app/constants/metrics';
+import { ETHNICITY_METRICS } from '@/app/constants/metrics';
 import type { EthnicityMetric, ScalarMetric, EthStatusMetric } from '@/app/constants/metrics';
+import {
+  unitValues, partisanLean, ethnicityPct, ethnicityCategory, scalarValue, parentDistricts,
+  type UnitDataStore,
+} from '@/app/lib/unitData';
 
 type ColorMetric = 'partisan' | ScalarMetric | EthnicityMetric | EthStatusMetric;
-
-function ethCatFor(geoId: string, ed: Partial<Record<EthnicityMetric, Record<string, number>>>): number {
-  const white = ed['white_pct']?.[geoId] ?? -1;
-  const nwPcts = NON_WHITE_GROUPS.map(({ key }) => ed[key]?.[geoId] ?? -1);
-  return ethCatFromPcts(white, nwPcts);
-}
 
 const ALL_LAYERS = ['state', 'county', 'tract', 'group', 'vtd', 'block'];
 
@@ -46,11 +44,7 @@ export function useMetricFeatureState(params: {
   districtColorMetric: ColorMetric;
   currentLayer: string;
   blockAssignmentsRef: MutableRefObject<Uint32Array | null>;
-  geoIdByIndexRef: MutableRefObject<Record<string, Record<number, string>>>;
-  parentBlockIndicesRef: MutableRefObject<Record<string, Record<string, number[]>>>;
-  partisanLeanRef: MutableRefObject<Record<string, number>>;
-  ethnicityDataRef: MutableRefObject<Partial<Record<EthnicityMetric, Record<string, number>>>>;
-  scalarDataRef: MutableRefObject<Partial<Record<ScalarMetric, Record<string, number>>>>;
+  unitDataRef: MutableRefObject<UnitDataStore>;
   hasVtd: boolean;
   showOutlinesRef: MutableRefObject<boolean>;
   /** Ref to receive a direct-call trigger. Set by this hook; caller invokes it after assignments change. */
@@ -58,8 +52,7 @@ export function useMetricFeatureState(params: {
 }) {
   const {
     mapRef, mapInitialized, sourcesVersion, visualizationMode, districtColorMetric, currentLayer,
-    blockAssignmentsRef, geoIdByIndexRef, parentBlockIndicesRef,
-    partisanLeanRef, ethnicityDataRef, scalarDataRef, hasVtd, showOutlinesRef, updateTriggerRef,
+    blockAssignmentsRef, unitDataRef, hasVtd, showOutlinesRef, updateTriggerRef,
   } = params;
 
   const isDistrictView = visualizationMode === 'districts';
@@ -71,23 +64,6 @@ export function useMetricFeatureState(params: {
     const sourceId = 'units-all';
     const fillLayerId = `units-${currentLayer}-fill`;
     if (!map.getLayer(fillLayerId)) return;
-
-    // ── Build parent district map for coarser layers ──────────────────────────
-    // O(numParentFeatures): looks up one representative block index per parent
-    // unit (precomputed in metricsWorker) rather than iterating all blocks.
-
-    const buildParentMap = (data: Uint32Array, layer: string): Map<string, number> => {
-      const allBlocks = parentBlockIndicesRef.current[layer];
-      if (!allBlocks) return new Map();
-      const newMap = new Map<string, number>();
-      for (const [parentGeoId, blockIndices] of Object.entries(allBlocks)) {
-        for (const blockIdx of blockIndices) {
-          const district = data[blockIdx];
-          if (district) { newMap.set(parentGeoId, district); break; }
-        }
-      }
-      return newMap;
-    };
 
     // Layers that are always preloaded (visibility:visible, opacity:0 when inactive).
     // Keep their fill expressions and feature states in sync even when not active,
@@ -136,6 +112,17 @@ export function useMetricFeatureState(params: {
       ];
     }
 
+    // Metric feature-state value for one unit (omitted when the data is unavailable).
+    const setMetricState = (stateUpdate: Record<string, number>, layer: string, index: number) => {
+      const v = unitValues(unitDataRef.current, layer, index);
+      let value: number | undefined;
+      if (districtColorMetric === 'partisan') value = partisanLean(v);
+      else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) value = ethnicityPct(v, districtColorMetric as EthnicityMetric);
+      else if (districtColorMetric === 'ethnicity') value = ethnicityCategory(v);
+      else value = scalarValue(v, districtColorMetric as ScalarMetric);
+      if (value !== undefined) stateUpdate[metricStateKey] = value;
+    };
+
     const fillColor = isDistrictView
       ? ['case', ['>', ['coalesce', ['feature-state', 'district'], 0], 0], 'rgba(0,0,0,0)', metricExpr]
       : metricExpr;
@@ -165,25 +152,11 @@ export function useMetricFeatureState(params: {
 
       const updateLayerStates = (layerName: string) => {
         const data = blockAssignmentsRef.current;
-        const indexMap = geoIdByIndexRef.current[layerName] ?? {};
-        const parentMap = isDistrictView && data ? buildParentMap(data, layerName) : new Map<string, number>();
-        for (const [indexStr, geoId] of Object.entries(indexMap)) {
-          if (!geoId) continue;
-          const featureIndex = parseInt(indexStr);
-          const district = parentMap.get(geoId) ?? 0;
-          const stateUpdate: Record<string, number> = { district };
-          if (districtColorMetric === 'partisan') {
-            const lean = partisanLeanRef.current[geoId];
-            if (lean !== undefined) stateUpdate[metricStateKey] = lean;
-          } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
-            const v = ethnicityDataRef.current[districtColorMetric as EthnicityMetric]?.[geoId];
-            if (v !== undefined) stateUpdate[metricStateKey] = v;
-          } else if (districtColorMetric === 'ethnicity') {
-            stateUpdate[metricStateKey] = ethCatFor(geoId, ethnicityDataRef.current);
-          } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
-            const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
-            if (v !== undefined) stateUpdate[metricStateKey] = v;
-          }
+        const count = unitDataRef.current.geoIds[layerName]?.length ?? 0;
+        const districts = isDistrictView && data ? parentDistricts(unitDataRef.current, layerName, data) : null;
+        for (let featureIndex = 0; featureIndex < count; featureIndex++) {
+          const stateUpdate: Record<string, number> = { district: districts?.[featureIndex] ?? 0 };
+          setMetricState(stateUpdate, layerName, featureIndex);
           map.setFeatureState({ source: sourceId, sourceLayer: layerName, id: featureIndex }, stateUpdate);
         }
       };
@@ -229,26 +202,14 @@ export function useMetricFeatureState(params: {
     const updateStates = () => {
       if (!map.getLayer(fillLayerId)) return;
       const data = blockAssignmentsRef.current;
-      const indexMap = geoIdByIndexRef.current['block'] ?? {};
+      const count = unitDataRef.current.geoIds['block']?.length ?? 0;
       const features = map.queryRenderedFeatures({ layers: [fillLayerId] });
       for (const feature of features) {
         const featureIndex = parseInt(feature.properties?.index);
-        const geoId = indexMap[featureIndex];
-        if (!geoId) continue;
+        if (!(featureIndex >= 0 && featureIndex < count)) continue;
         const district = data ? (data[featureIndex] ?? 0) : 0;
         const stateUpdate: Record<string, number> = { district };
-        if (districtColorMetric === 'partisan') {
-          const lean = partisanLeanRef.current[geoId];
-          if (lean !== undefined) stateUpdate[metricStateKey] = lean;
-        } else if (ETHNICITY_METRICS.includes(districtColorMetric as EthnicityMetric)) {
-          const v = ethnicityDataRef.current[districtColorMetric as EthnicityMetric]?.[geoId];
-          if (v !== undefined) stateUpdate[metricStateKey] = v;
-        } else if (districtColorMetric === 'ethnicity') {
-          stateUpdate[metricStateKey] = ethCatFor(geoId, ethnicityDataRef.current);
-        } else if (SCALAR_METRICS.includes(districtColorMetric as ScalarMetric)) {
-          const v = scalarDataRef.current[districtColorMetric as ScalarMetric]?.[geoId];
-          if (v !== undefined) stateUpdate[metricStateKey] = v;
-        }
+        setMetricState(stateUpdate, 'block', featureIndex);
         map.setFeatureState({ source: sourceId, sourceLayer: 'block', id: featureIndex }, stateUpdate);
       }
     };

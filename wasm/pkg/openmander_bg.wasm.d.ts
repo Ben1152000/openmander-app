@@ -29,11 +29,15 @@ export const wasmplan_tabu_balance: (a: number, b: number, c: number, d: number,
 export const wasmplan_to_csv_text: (a: number) => [number, number, number, number];
 export const wasmplan_to_geojson: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const __wbg_wasmmap_free: (a: number, b: number) => void;
+export const wasmmap_column: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const wasmmap_geo_id_index_json: (a: number) => [number, number, number, number];
 export const wasmmap_layers_present: (a: number) => [number, number, number];
 export const wasmmap_new: (a: any) => [number, number, number];
+export const wasmmap_parent_indices: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const wasmmap_series_names: (a: number, b: number, c: number) => [number, number, number];
 export const wasmmap_to_geojson: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const wasmmap_to_svg: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const wasmmap_unit_names: (a: number, b: number, c: number) => [number, number, number];
 export const init: () => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

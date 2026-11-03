@@ -1,4 +1,4 @@
-import { Fragment, type MutableRefObject } from 'react';
+import { Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import type { DistrictStat, EthnicityMetric, ScalarMetric } from '@/app/constants/metrics';
 import { ETHNICITY_METRICS, ETHNICITY_STAT_KEYS, SCALAR_METRICS, SCALAR_STAT_KEYS, SCALAR_TRANSFORMS, ethCatFromStat, ethCatFullLabel } from '@/app/constants/metrics';
@@ -10,8 +10,8 @@ interface DistrictTooltipProps {
   y: number;
   districtStats: DistrictStat[] | null;
   districtColorMetric: string;
-  electionNameRef: MutableRefObject<string>;
-  censusNameRef: MutableRefObject<string>;
+  electionName: string;
+  censusName: string;
 }
 
 type Row = { label: string; count: string; pct?: string; color?: string; bold?: boolean };
@@ -49,7 +49,7 @@ function fmt(n: number, decimals = 0): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
 }
 
-export function DistrictTooltip({ district, x, y, districtStats, districtColorMetric, electionNameRef, censusNameRef }: DistrictTooltipProps) {
+export function DistrictTooltip({ district, x, y, districtStats, districtColorMetric, electionName, censusName }: DistrictTooltipProps) {
   const stat = districtStats?.find(d => d.district === district);
   const metric = districtColorMetric;
 
@@ -71,7 +71,7 @@ export function DistrictTooltip({ district, x, y, districtStats, districtColorMe
       }
     }
 
-    let censusHeader = censusNameRef.current || 'Census';
+    let censusHeader = censusName || 'Census';
     if (metric === 'ethnicity') {
       censusHeader = `${censusHeader} · ${ethCatFullLabel(ethCatFromStat(stat))}`;
     }
@@ -83,7 +83,7 @@ export function DistrictTooltip({ district, x, y, districtStats, districtColorMe
       const demPct = total > 0 ? `${fmt(stat.demVotes / total * 100, 1)}%` : undefined;
       const repPct = total > 0 ? `${fmt(stat.repVotes / total * 100, 1)}%` : undefined;
       sections.push({
-        header: electionNameRef.current || 'Election',
+        header: electionName || 'Election',
         rows: [
           { label: 'Dem', count: fmt(stat.demVotes), pct: demPct, color: 'text-blue-600' },
           { label: 'Rep', count: fmt(stat.repVotes), pct: repPct, color: 'text-red-600' },
@@ -94,7 +94,7 @@ export function DistrictTooltip({ district, x, y, districtStats, districtColorMe
       if (stat.vap > 0) electionRows.push({ label: 'VAP', count: fmt(stat.vap) });
       if (stat.vap > 0) electionRows.push({ label: 'Votes', count: fmt(stat.votesCast) });
       electionRows.push({ label: 'Turnout', count: `${fmt(stat.turnout * 100, 1)}%` });
-      sections.push({ header: electionNameRef.current || 'Election', rows: electionRows });
+      sections.push({ header: electionName || 'Election', rows: electionRows });
     }
   }
 

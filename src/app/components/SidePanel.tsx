@@ -450,12 +450,13 @@ export function SidePanel(props: SidePanelProps) {
                     {availableElections.length > 1 && (
                       <div className="flex-1 min-w-0">
                         <Label>Election</Label>
-                        <div className="relative mt-2 flex h-10 w-full items-center rounded-md border-2 border-input bg-background px-3 shadow-sm">
+                        <div className="relative mt-2 flex h-10 w-full items-center rounded-md border-2 border-input bg-background shadow-sm">
                           <CustomSelect
                             value={pendingElection}
                             onChange={setPendingElection}
                             options={availableElections.map(e => ({ value: e.series, label: e.label }))}
                             dropdownAlign="left"
+                            fullWidth
                           />
                         </div>
                       </div>
@@ -463,12 +464,13 @@ export function SidePanel(props: SidePanelProps) {
                     {availableCensus.length > 1 && (
                       <div className="flex-1 min-w-0">
                         <Label>Census</Label>
-                        <div className="relative mt-2 flex h-10 w-full items-center rounded-md border-2 border-input bg-background px-3 shadow-sm">
+                        <div className="relative mt-2 flex h-10 w-full items-center rounded-md border-2 border-input bg-background shadow-sm">
                           <CustomSelect
                             value={pendingCensus}
                             onChange={setPendingCensus}
                             options={availableCensus.map(c => ({ value: c.series, label: c.label }))}
                             dropdownAlign="left"
+                            fullWidth
                           />
                         </div>
                       </div>

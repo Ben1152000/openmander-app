@@ -25,6 +25,7 @@ import { usePaintHandlers } from './hooks/usePaintHandlers';
 import { useVisualizationPaint } from './hooks/useVisualizationPaint';
 import { useMetricFeatureState } from './hooks/useMetricFeatureState';
 import { WorkerPlan } from '@/workers/workerPlan';
+import { availableSeries, columnsFor, electionSeriesLabel, censusSeriesLabel } from '@/app/lib/unitData';
 
 // How many zoom levels before the VTD→block threshold to start prefetching the block layer.
 const BLOCK_PRELOAD_RANGE = 0.5;
@@ -116,7 +117,7 @@ export default function App() {
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [activeDistrict, setActiveDistrict] = useState<number>(1);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pan');
-  const [hoverUnit, setHoverUnit] = useState<{ geoId: string; layer: string; x: number; y: number } | null>(null);
+  const [hoverUnit, setHoverUnit] = useState<{ geoId: string; layer: string; index: number; x: number; y: number } | null>(null);
   const [hoverDistrict, setHoverDistrict] = useState<{ district: number; x: number; y: number } | null>(null);
   const isDistrictHoveredRef = useRef(false);
   const [prevDistrict, setPrevDistrict] = useState<number>(0);
@@ -175,16 +176,17 @@ export default function App() {
   const selectedCensusRef   = useRef('T_20_CENS');
   selectedElectionRef.current = selectedElection;
   selectedCensusRef.current   = selectedCensus;
-  const packFilesRef = useRef<Record<string, Uint8Array> | null>(null);
 
   // Plan worker for background optimization
   const planRef = useRef<WorkerPlan | null>(null);
-  const metricsWorkerRef = useRef<Worker | null>(null);
   const workerReadyRef = useRef(false);
   // Refs so WorkerPlan callbacks always call the latest hook-provided functions.
   const applyWorkerGeometriesRef = useRef<((items: any[], dem: number[] | null, rep: number[] | null) => void) | null>(null);
   const applyWorkerStatsRef = useRef<((ds: any[], rs: any) => void) | null>(null);
-  const applyMetricsRef = useRef<((...args: any[]) => void) | null>(null);
+  // Latest column request; older responses are ignored so a fast series switch can't be overwritten.
+  const columnsRequestRef = useRef(0);
+  // Bumped when unit data columns arrive so tooltips re-render with the new values.
+  const [, setUnitDataVersion] = useState(0);
 
   const stateConfigs = usePackIndex();
 
@@ -199,8 +201,8 @@ export default function App() {
   const loadedConfig = loadedState ? stateConfigs[loadedState] : undefined;
   polarZoomOffsetRef.current = loadedConfig && isPolarState(loadedConfig) ? POLAR_ZOOM_OFFSET : 0;
 
-  // CSV metric data (refs, populated via worker 'metrics' message)
-  const { partisanLeanRef, ethnicityDataRef, scalarDataRef, geoIdByIndexRef, parentBlockIndicesRef, unitNamesRef, unitPopulationRef, unitElectionVotesRef, unitEthnicCountsRef, unitLandKm2Ref, unitVapRef, electionNameRef, censusNameRef, clearMetrics, applyMetrics, seedGeoIdIndex } = useMapMetrics();
+  // Per-unit data (geo_ids, names, data columns), populated from the plan worker
+  const { unitDataRef, geoIdByIndexRef, clearMetrics, applyReady, applyColumns } = useMapMetrics();
 
   // District geometries, stats, swatch colors
   const { districtGeoJson, setDistrictGeoJson, districtStats, regionStats, districtSwatchColors, applyWorkerGeometries, applyWorkerStats, resetDistrictData } =
@@ -209,7 +211,6 @@ export default function App() {
   // Keep the refs current so the stable worker handler always calls the latest version.
   applyWorkerGeometriesRef.current = applyWorkerGeometries;
   applyWorkerStatsRef.current = applyWorkerStats;
-  applyMetricsRef.current = applyMetrics;
 
   // Map layers (PMTiles vector tile source setup)
   useMapLayers({ mapRef, mapInitialized, pmtilesBufferReady, loadedState, loadedConfig, setLoadingStatus, setSourcesVersion, loadedSourcesRef, workerReadyRef });
@@ -349,15 +350,28 @@ export default function App() {
     districtColorMetric: districtColorMetric as any,
     currentLayer,
     blockAssignmentsRef,
-    geoIdByIndexRef,
-    parentBlockIndicesRef,
-    partisanLeanRef,
-    ethnicityDataRef,
-    scalarDataRef,
+    unitDataRef,
     hasVtd,
     showOutlinesRef,
     updateTriggerRef: metricStateUpdateRef,
   });
+
+  // Fetch the data columns for a series selection (only those not already loaded),
+  // then switch the unit data store to that selection and recolor.
+  const loadColumns = useCallback((elSeries: string, cenSeries: string) => {
+    const plan = planRef.current;
+    if (!plan) return;
+    const token = ++columnsRequestRef.current;
+    const loaded = unitDataRef.current.columns['block'] ?? {};
+    const missing = columnsFor(elSeries, cenSeries).filter(name => !(name in loaded));
+    const request = missing.length > 0 ? plan.getColumns(missing) : Promise.resolve({});
+    request.then(columns => {
+      if (token !== columnsRequestRef.current) return;
+      applyColumns(columns, elSeries, cenSeries);
+      setUnitDataVersion(v => v + 1);
+      metricStateUpdateRef.current?.();
+    }, err => console.error('[App] Failed to load data columns:', err));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Spawn plan worker eagerly so WASM compilation overlaps with pack fetching.
   useEffect(() => {
@@ -384,17 +398,13 @@ export default function App() {
           if (!automationRunningRef.current) setLoadingStatus('');
         }
       },
-      onReady: (geoIdIndex) => {
-        // Seed geoIdByIndex from WASM so painting works before the metrics worker
-        // finishes parsing the block CSV. Uses a non-destructive merge so that if
-        // the metrics worker already completed (fast states), its data is preserved.
-        const converted: Record<string, Record<number, string>> = {};
-        for (const [layer, ids] of Object.entries(geoIdIndex)) {
-          const m: Record<number, string> = {};
-          for (let i = 0; i < ids.length; i++) m[i] = ids[i];
-          converted[layer] = m;
-        }
-        seedGeoIdIndex(converted);
+      onReady: (payload) => {
+        applyReady(payload);
+        const { elections, census } = availableSeries(payload.seriesNames);
+        setAvailableElections(elections);
+        setAvailableCensus(census);
+        // loadColumns is stable (refs + stable setters only), so the mount-time closure is safe.
+        loadColumns(selectedElectionRef.current, selectedCensusRef.current);
       },
       onGeometries: (items, dem, rep) => applyWorkerGeometriesRef.current?.(items, dem, rep),
       onStats: (ds, rs) => applyWorkerStatsRef.current?.(ds, rs),
@@ -402,43 +412,21 @@ export default function App() {
     return () => { planRef.current?.terminate(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const runMetricsWorker = useCallback((elSeries: string, cenSeries: string) => {
-    if (!packFilesRef.current) return;
-    metricsWorkerRef.current?.terminate();
-    const mw = new Worker(new URL('../workers/metricsWorker.ts', import.meta.url), { type: 'module' });
-    mw.onmessage = (e) => {
-      applyMetricsRef.current?.(
-        e.data.partisanLean, e.data.geoIdByIndex, e.data.scalarData, e.data.ethnicityData,
-        e.data.blockToParents ?? {}, e.data.parentBlockIndices ?? {},
-        e.data.unitNames ?? {}, e.data.unitPopulation ?? {},
-        e.data.unitElectionVotes ?? {}, e.data.unitEthnicCounts ?? {},
-        e.data.unitLandKm2 ?? {}, e.data.unitVap ?? {}, e.data.electionName ?? '', e.data.censusName ?? '',
-      );
-      if (e.data.availableElections?.length) setAvailableElections(e.data.availableElections);
-      if (e.data.availableCensus?.length) setAvailableCensus(e.data.availableCensus);
-      metricStateUpdateRef.current?.();
-      mw.terminate();
-    };
-    mw.onerror = (e) => console.error('[MetricsWorker] Error:', e.message, e);
-    metricsWorkerRef.current = mw;
-    mw.postMessage({ packFiles: packFilesRef.current, electionSeries: elSeries, censusSeries: cenSeries });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleElectionChange = useCallback((series: string) => {
     setSelectedElection(series);
     selectedElectionRef.current = series;
-    runMetricsWorker(series, selectedCensusRef.current);
+    loadColumns(series, selectedCensusRef.current);
     planRef.current?.setDataSeries(series, selectedCensusRef.current);
-  }, [runMetricsWorker]);
+  }, [loadColumns]);
 
   const handleCensusChange = useCallback((series: string) => {
     setSelectedCensus(series);
     selectedCensusRef.current = series;
-    runMetricsWorker(selectedElectionRef.current, series);
+    loadColumns(selectedElectionRef.current, series);
     planRef.current?.setDataSeries(selectedElectionRef.current, series);
-  }, [runMetricsWorker]);
+  }, [loadColumns]);
 
-  // When pack files arrive, initialise the plan worker and metrics worker in parallel.
+  // When pack files arrive, initialise the plan worker (which then supplies unit data on 'ready').
   useEffect(() => {
     if (!mapData?.packFiles || !numDistricts || !planRef.current) return;
 
@@ -450,19 +438,20 @@ export default function App() {
     clearMetrics();
     setLoadingStatus((Math.random() < 0.01 ? 'Imbibing redistricting eggnog...' : 'Initializing redistricting engine...'));
 
+    // Reset the series selection before init so 'ready' loads columns for the defaults.
+    selectedElectionRef.current = 'E_20_PRES';
+    selectedCensusRef.current = 'T_20_CENS';
+    setSelectedElection('E_20_PRES');
+    setSelectedCensus('T_20_CENS');
+    setAvailableElections([]);
+    setAvailableCensus([]);
+
+    // In production, pack buffers are transferred to the worker (detached here) — see WorkerPlan.init.
     planRef.current.init(mapData.packFiles, numDistricts).then(() => {
       workerReadyRef.current = true;
       setWorkerReady(true);
       setLoadingStatus('');
     });
-
-    // Metrics worker: CSV parsing (~2.5s), runs in parallel with WasmMap (~7s)
-    packFilesRef.current = mapData.packFiles;
-    setSelectedElection('E_20_PRES');
-    setSelectedCensus('T_20_CENS');
-    setAvailableElections([]);
-    setAvailableCensus([]);
-    runMetricsWorker('E_20_PRES', 'T_20_CENS');
   }, [mapData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize map only once
@@ -590,12 +579,12 @@ export default function App() {
 
   const handleExportPlan = () => {
     const blockAssignments = blockAssignmentsRef.current;
-    const blockMap = geoIdByIndexRef.current['block'];
-    if (!blockAssignments || !blockMap) return;
+    const blockIds = geoIdByIndexRef.current['block'];
+    if (!blockAssignments || !blockIds) return;
     const rows = ['GEOID20,District'];
-    for (const [idxStr, geoId] of Object.entries(blockMap)) {
-      const district = blockAssignments[parseInt(idxStr)];
-      if (district > 0) rows.push(`${geoId},${district}`);
+    for (let i = 0; i < blockIds.length; i++) {
+      const district = blockAssignments[i];
+      if (district > 0) rows.push(`${blockIds[i]},${district}`);
     }
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -607,11 +596,10 @@ export default function App() {
   };
 
   const handleImportPlan = (file: File) => {
-    const blockMap = geoIdByIndexRef.current['block'];
-    if (!blockMap) { setAlertMessage('Error: Map data not loaded yet.'); return; }
-    const geoIdToIndex: Record<string, number> = {};
-    for (const [idx, geoId] of Object.entries(blockMap)) geoIdToIndex[geoId] = parseInt(idx);
-    const size = Object.keys(blockMap).length;
+    const blockIds = geoIdByIndexRef.current['block'];
+    if (!blockIds) { setAlertMessage('Error: Map data not loaded yet.'); return; }
+    const geoIdToIndex = new globalThis.Map(blockIds.map((geoId, i) => [geoId, i] as const));
+    const size = blockIds.length;
 
     file.text().then(text => {
       const arr = new Uint32Array(size);
@@ -630,7 +618,7 @@ export default function App() {
         const [geoId, districtStr] = [cols[geoCol], cols[distCol]];
         if (!geoId || !districtStr) continue;
         const district = parseInt(districtStr);
-        const idx = geoIdToIndex[geoId];
+        const idx = geoIdToIndex.get(geoId);
         if (idx != null && district > 0) {
           arr[idx] = district;
           newAssignments[geoId] = district;
@@ -676,14 +664,14 @@ export default function App() {
     setAvailableCensus([]);
     if (state !== loadedState) {
       resetPmtilesBuffer();
-    } else if (mapData?.packFiles && planRef.current) {
-      // Same state — mapData/numDistricts won't change so the init effect won't re-run; call init directly.
+    } else if (mapData && planRef.current) {
+      // Same state — the map is already loaded in the worker; just start a fresh plan on it.
       blockAssignmentsRef.current = null;
       workerReadyRef.current = false;
       setWorkerReady(false);
       setDrawingTool('pan');
-      setLoadingStatus((Math.random() < 1/50 ? 'Imbibing redistricting eggnog...' : 'Initializing redistricting engine...'));
-      planRef.current.init(mapData.packFiles, districts).then(() => {
+      setLoadingStatus('Creating new plan...');
+      planRef.current.newPlan(districts).then(() => {
         workerReadyRef.current = true;
         setWorkerReady(true);
         setLoadingStatus('');
@@ -781,27 +769,19 @@ export default function App() {
           y={hoverDistrict.y}
           districtStats={districtStats}
           districtColorMetric={districtColorMetric}
-          electionNameRef={electionNameRef}
-          censusNameRef={censusNameRef}
+          electionName={electionSeriesLabel(selectedElection)}
+          censusName={censusSeriesLabel(selectedCensus)}
         />
       )}
       {drawingTool === 'pointer' && !hoverDistrict && hoverUnit && (
         <UnitTooltip
           geoId={hoverUnit.geoId}
           layer={hoverUnit.layer}
+          index={hoverUnit.index}
           x={hoverUnit.x}
           y={hoverUnit.y}
           districtColorMetric={districtColorMetric}
-          unitNamesRef={unitNamesRef}
-          unitPopulationRef={unitPopulationRef}
-          scalarDataRef={scalarDataRef}
-          ethnicityDataRef={ethnicityDataRef}
-          unitElectionVotesRef={unitElectionVotesRef}
-          unitEthnicCountsRef={unitEthnicCountsRef}
-          unitLandKm2Ref={unitLandKm2Ref}
-          unitVapRef={unitVapRef}
-          electionNameRef={electionNameRef}
-          censusNameRef={censusNameRef}
+          unitDataRef={unitDataRef}
         />
       )}
       <MapToolbar

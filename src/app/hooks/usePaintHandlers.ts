@@ -12,11 +12,11 @@ export function usePaintHandlers(params: {
   assignmentsRef: MutableRefObject<Record<string, number>>;
   setDistrictCounts: Dispatch<SetStateAction<Record<number, number>>>;
   featureHashesRef: MutableRefObject<Record<string, string>>;
-  geoIdByIndexRef: MutableRefObject<Record<string, Record<number, string>>>;
+  geoIdByIndexRef: MutableRefObject<Record<string, string[]>>;
   onAssignUnit: (layer: string, geoId: string, district: number) => void;
   onAssignUnitsBatch: (layer: string, geoIds: string[], district: number) => void;
   automationRunning: boolean;
-  onHoverUnit?: (info: { geoId: string; layer: string; x: number; y: number } | null) => void;
+  onHoverUnit?: (info: { geoId: string; layer: string; index: number; x: number; y: number } | null) => void;
   isDistrictHoveredRef?: MutableRefObject<boolean>;
 }) {
   const {
@@ -48,7 +48,7 @@ export function usePaintHandlers(params: {
     if (drawingTool === 'pointer') {
       map.getCanvas().style.cursor = 'default';
 
-      const lastGeoIdRef = { current: null as string | null };
+      const lastHoverRef = { current: null as { geoId: string; index: number } | null };
 
       const pointerMouseMove = (e: any) => {
         map.getCanvas().style.cursor = 'default';
@@ -67,11 +67,11 @@ export function usePaintHandlers(params: {
           map.setFeatureState({ source: sourceId, sourceLayer: currentLayer, id: featureId }, { hover: true });
         }
 
-        const index = (e.features?.[0] as any)?.properties?.index;
-        const geoId = geoIdByIndexRef.current[currentLayer]?.[parseInt(index)];
+        const index = parseInt((e.features?.[0] as any)?.properties?.index);
+        const geoId = geoIdByIndexRef.current[currentLayer]?.[index];
         if (geoId) {
-          lastGeoIdRef.current = geoId;
-          onHoverUnit?.({ geoId, layer: currentLayer, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+          lastHoverRef.current = { geoId, index };
+          onHoverUnit?.({ geoId, index, layer: currentLayer, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
         }
       };
 
@@ -80,14 +80,14 @@ export function usePaintHandlers(params: {
       const container = map.getCanvasContainer();
       const nativeMouseMove = (e: MouseEvent) => {
         if (isDistrictHoveredRef?.current) { clearHover(); return; }
-        if (!lastGeoIdRef.current) return;
-        onHoverUnit?.({ geoId: lastGeoIdRef.current, layer: currentLayer, x: e.clientX, y: e.clientY });
+        if (!lastHoverRef.current) return;
+        onHoverUnit?.({ ...lastHoverRef.current, layer: currentLayer, x: e.clientX, y: e.clientY });
       };
 
       const pointerMouseLeave = () => {
         map.getCanvas().style.cursor = '';
         clearHover();
-        lastGeoIdRef.current = null;
+        lastHoverRef.current = null;
         onHoverUnit?.(null);
       };
 
@@ -102,7 +102,7 @@ export function usePaintHandlers(params: {
         map.off('mouseleave', fillLayerId, pointerMouseLeave);
         map.off('mouseleave', pointerMouseLeave);
         clearHover();
-        lastGeoIdRef.current = null;
+        lastHoverRef.current = null;
         onHoverUnit?.(null);
         map.getCanvas().style.cursor = '';
       };

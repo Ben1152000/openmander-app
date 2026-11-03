@@ -5,6 +5,8 @@
 // geometries, stats, logs) is delivered via callbacks throughout.
 //
 // Only one operation runs at a time. Concurrent calls are not supported.
+// Exception: getColumns() is answered out of band (matched by request id), so it
+// can run alongside a pending operation.
 
 export type GeometryItem = { district: number; wkb: Uint8Array };
 
@@ -22,11 +24,21 @@ export type RegionStats = {
   asianPct: number; nativePct: number; pacificPct: number;
 };
 
+export type ReadyPayload = {
+  geoIdIndex: Record<string, string[]>;
+  unitNames: Record<string, string[]>;
+  blockParents: Record<string, Uint32Array>;
+  seriesNames: string[];
+};
+
+/** layer → series → values (index-aligned with the layer's units). */
+export type ColumnsPayload = Record<string, Record<string, Float64Array>>;
+
 export type WorkerPlanCallbacks = {
   onAssignments: (data: Uint32Array, done: boolean) => void;
   onGeometries: (items: GeometryItem[], demTotals: number[] | null, repTotals: number[] | null) => void;
   onStats: (districtStats: DistrictStat[], regionStats: RegionStats) => void;
-  onReady: (geoIdIndex: Record<string, string[]>) => void;
+  onReady: (payload: ReadyPayload) => void;
   onLog: (message: string) => void;
 };
 
@@ -38,6 +50,10 @@ export class WorkerPlan {
   private resolve: (() => void) | null = null;
   private reject: ((err: Error) => void) | null = null;
   private waitingFor: 'ready' | 'stats' | null = null;
+
+  // Out-of-band column requests, keyed by request id.
+  private nextRequestId = 1;
+  private columnRequests = new Map<number, { resolve: (c: ColumnsPayload) => void; reject: (e: Error) => void }>();
 
   constructor(worker: Worker, callbacks: WorkerPlanCallbacks) {
     this.worker = worker;
@@ -55,7 +71,12 @@ export class WorkerPlan {
         break;
 
       case 'ready':
-        this.callbacks.onReady(msg.geoIdIndex ?? {});
+        this.callbacks.onReady({
+          geoIdIndex: msg.geoIdIndex ?? {},
+          unitNames: msg.unitNames ?? {},
+          blockParents: msg.blockParents ?? {},
+          seriesNames: msg.seriesNames ?? [],
+        });
         if (this.waitingFor === 'ready') this.settle();
         break;
 
@@ -69,8 +90,16 @@ export class WorkerPlan {
 
       case 'stats':
         this.callbacks.onStats(msg.districtStats, msg.regionStats);
-        if (this.waitingFor === 'stats') this.settle();
+        if (this.waitingFor === 'stats' && !msg.unsolicited) this.settle();
         break;
+
+      case 'columns': {
+        const request = this.columnRequests.get(msg.id);
+        this.columnRequests.delete(msg.id);
+        if (msg.error) request?.reject(new Error(msg.error));
+        else request?.resolve(msg.columns);
+        break;
+      }
 
       case 'error':
         console.error('[Worker] Error:', msg.message);
@@ -82,6 +111,8 @@ export class WorkerPlan {
   private handleError = (e: ErrorEvent) => {
     console.error('[Worker] Uncaught error:', e.message, e);
     this.fail(new Error(e.message));
+    for (const request of this.columnRequests.values()) request.reject(new Error(e.message));
+    this.columnRequests.clear();
   };
 
   private settle() {
@@ -107,8 +138,27 @@ export class WorkerPlan {
     });
   }
 
+  /// Load a pack and create a plan. In production the pack buffers are transferred
+  /// (detached on this side) to avoid keeping a second ~1 GB copy on the main thread.
+  /// Dev builds copy instead, since a hot-reload remount re-runs init with the same buffers.
   init(packFiles: Record<string, Uint8Array>, numDistricts: number): Promise<void> {
-    return this.call('ready', { type: 'init', packFiles, numDistricts });
+    const buffers = new Set(Object.values(packFiles).map(a => a.buffer as ArrayBuffer));
+    const transfer = import.meta.env.DEV ? [] : [...buffers];
+    return this.call('ready', { type: 'init', packFiles, numDistricts }, transfer);
+  }
+
+  /// Replace the plan with an empty one on the already-loaded map.
+  newPlan(numDistricts: number): Promise<void> {
+    return this.call('stats', { type: 'new-plan', numDistricts });
+  }
+
+  /// Fetch data columns for every layer. Missing series are omitted from the result.
+  getColumns(series: string[]): Promise<ColumnsPayload> {
+    const id = this.nextRequestId++;
+    return new Promise((resolve, reject) => {
+      this.columnRequests.set(id, { resolve, reject });
+      this.worker.postMessage({ type: 'get-columns', id, series });
+    });
   }
 
   randomize(): Promise<void> {

@@ -9,12 +9,16 @@
 //   { type: 'compute-geometries' }
 //   { type: 'assign-unit', layer: string, geoId: string, district: number }
 //   { type: 'anneal', configJson: string }
+//   { type: 'new-plan', numDistricts: number }                 — fresh plan on the already-loaded map
+//   { type: 'get-columns', id: number, series: string[] }      — per-layer data columns (answered out of band)
 //
 // Messages out:
-//   { type: 'ready' }                                          — init complete
+//   { type: 'ready', geoIdIndex, unitNames, blockParents, seriesNames } — init complete
+//   { type: 'columns', id, columns: Record<layer, Record<series, Float64Array>> } (buffers transferred)
 //   { type: 'assignments', data: Uint32Array, done: boolean } — progress or completion (buffer transferred)
 //   { type: 'geometries', items: {district: number, wkb: Uint8Array}[] } — WKB per district (buffers transferred)
-//   { type: 'stats', districtStats: DistrictStat[], regionStats: RegionStats } — district/region stats
+//   { type: 'stats', districtStats, regionStats, unsolicited? } — district/region stats
+//     (unsolicited: sent without a pending request, e.g. after set-data-series)
 //   { type: 'log', message: string }                          — forwarded console.log (worker runs off main thread)
 //   { type: 'error', message: string }
 
@@ -87,7 +91,7 @@ function sendGeometries() {
   lastGeometryMs = performance.now();
 }
 
-function sendStats() {
+function sendStats(unsolicited = false) {
   if (!wasmPlan) return;
   const available: string[] = Array.from((wasmPlan as any).series() as any) as string[];
 
@@ -166,7 +170,27 @@ function sendStats() {
     };
   });
 
-  (self as any).postMessage({ type: 'stats', districtStats, regionStats });
+  (self as any).postMessage({ type: 'stats', districtStats, regionStats, unsolicited });
+}
+
+/// Reply to a 'get-columns' request with every requested series that exists, for every layer.
+function sendColumns(id: number, series: string[]) {
+  try {
+    if (!wasmMap) throw new Error('Worker not initialized');
+    const columns: Record<string, Record<string, Float64Array>> = {};
+    const transfer: ArrayBuffer[] = [];
+    for (const layer of wasmMap.layers_present() as string[]) {
+      const layerCols: Record<string, Float64Array> = {};
+      for (const name of series) {
+        const col = wasmMap.column(layer, name);
+        if (col) { layerCols[name] = col; transfer.push(col.buffer as ArrayBuffer); }
+      }
+      columns[layer] = layerCols;
+    }
+    (self as any).postMessage({ type: 'columns', id, columns }, transfer);
+  } catch (err) {
+    (self as any).postMessage({ type: 'columns', id, columns: {}, error: String(err) });
+  }
 }
 
 self.onmessage = async (e: MessageEvent) => {
@@ -183,7 +207,9 @@ self.onmessage = async (e: MessageEvent) => {
     | { type: 'set-assignments'; data: Uint32Array }
     | { type: 'anneal'; configJson: string }
     | { type: 'abort' }
-    | { type: 'set-data-series'; electionSeries: string; censusSeries: string };
+    | { type: 'set-data-series'; electionSeries: string; censusSeries: string }
+    | { type: 'new-plan'; numDistricts: number }
+    | { type: 'get-columns'; id: number; series: string[] };
 
   try {
     if (msg.type === 'abort') {
@@ -191,11 +217,16 @@ self.onmessage = async (e: MessageEvent) => {
       return;
     }
 
-  if (msg.type === 'set-data-series') {
+    if (msg.type === 'set-data-series') {
       electionSeries = msg.electionSeries;
       censusSeries   = msg.censusSeries;
-      sendStats();
+      sendStats(true);
       if (lastGeometryMs > 0) sendGeometries();
+      return;
+    }
+
+    if (msg.type === 'get-columns') {
+      sendColumns(msg.id, msg.series);
       return;
     }
 
@@ -216,14 +247,33 @@ self.onmessage = async (e: MessageEvent) => {
       wasmPlan = new WasmPlan(wasmMap, msg.numDistricts);
       lastGeometryMs = 0;
 
-      // Export geo_id index so the main thread can enable painting immediately,
-      // without waiting for the metrics worker to finish parsing the block CSV.
-      const geoIdIndexJson: string = (wasmMap as any).geo_id_index_json();
-      const geoIdIndex: Record<string, string[]> = JSON.parse(geoIdIndexJson);
+      // Unit identity data for the main thread (painting, tooltips, coarse-layer coloring).
+      // Numeric columns are requested separately via 'get-columns'.
+      const geoIdIndex: Record<string, string[]> = JSON.parse(wasmMap.geo_id_index_json());
+      const layers = Object.keys(geoIdIndex);
+      const unitNames: Record<string, string[]> = {};
+      const blockParents: Record<string, Uint32Array> = {};
+      for (const layer of layers) {
+        unitNames[layer] = wasmMap.unit_names(layer) as string[];
+        if (layer !== 'block') blockParents[layer] = wasmMap.parent_indices('block', layer);
+      }
+      const seriesNames = wasmMap.series_names('block') as string[];
 
       sendStats();
       log('[Worker] Ready');
-      self.postMessage({ type: 'ready', geoIdIndex });
+      (self as any).postMessage(
+        { type: 'ready', geoIdIndex, unitNames, blockParents, seriesNames },
+        Object.values(blockParents).map(a => a.buffer),
+      );
+
+    } else if (msg.type === 'new-plan') {
+      if (!wasmMap) throw new Error('Worker not initialized');
+      wasmPlan?.free();
+      wasmPlan = new WasmPlan(wasmMap, msg.numDistricts);
+      lastGeometryMs = 0;
+      const emptyAssignments = new Uint32Array(wasmPlan.assignments_u32());
+      (self as any).postMessage({ type: 'assignments', data: emptyAssignments, done: true }, [emptyAssignments.buffer]);
+      sendStats();
 
     } else if (msg.type === 'randomize') {
       if (!wasmPlan) throw new Error('Worker not initialized');

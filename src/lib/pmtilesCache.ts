@@ -85,7 +85,10 @@ async function getCachedFile(url: string, expectedSha256?: string): Promise<Arra
 async function cacheFile(url: string, data: ArrayBuffer, sha256?: string): Promise<void> {
   try {
     const database = await initDB();
-    return new Promise((resolve, reject) => {
+    // Caching is best-effort: always settle, even when the transaction aborts. Chromium
+    // aborts puts larger than ~133 MB (e.g. IL's PMTiles) without firing request.onerror,
+    // which previously left this promise pending forever and stalled pack loading.
+    return new Promise((resolve) => {
       const transaction = database.transaction(STORE_NAME, "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const entry: CacheEntry = {
@@ -96,9 +99,12 @@ async function cacheFile(url: string, data: ArrayBuffer, sha256?: string): Promi
         sha256,
       };
 
-      const request = store.put(entry);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => {
+        console.warn("Failed to cache file:", transaction.error);
+        resolve();
+      };
+      store.put(entry);
     });
   } catch (err) {
     console.warn("Failed to cache file:", err);

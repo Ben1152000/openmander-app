@@ -12,6 +12,24 @@ export class WasmMap {
         wasm.__wbg_wasmmap_free(ptr, 0);
     }
     /**
+     * Values of one data series for every unit in a layer, in index order.
+     * Returns `undefined` if the series does not exist.
+     * @param {string | null | undefined} layer
+     * @param {string} series
+     * @returns {Float64Array | undefined}
+     */
+    column(layer, series) {
+        var ptr0 = isLikeNone(layer) ? 0 : passStringToWasm0(layer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(series, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmap_column(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Return geo_ids in index order for every layer, as a JSON string.
      * Shape: `{"block": ["geo1", "geo2", ...], "county": [...], ...}`
      * Used by the plan worker to populate geoIdByIndex immediately on ready,
@@ -62,6 +80,38 @@ export class WasmMap {
         return this;
     }
     /**
+     * For each unit in `child`, the index of its parent unit in `parent`
+     * (0xFFFFFFFF if none).
+     * @param {string} child
+     * @param {string} parent
+     * @returns {Uint32Array}
+     */
+    parent_indices(child, parent) {
+        const ptr0 = passStringToWasm0(child, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(parent, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmap_parent_indices(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Names of all numeric data series in a layer (sorted), as a JS string array.
+     * @param {string | null} [layer]
+     * @returns {any}
+     */
+    series_names(layer) {
+        var ptr0 = isLikeNone(layer) ? 0 : passStringToWasm0(layer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmap_series_names(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Export layer geometries as GeoJSON FeatureCollection.
      * Returns GeoJSON as a JavaScript object.
      * bounds: Optional bounding box [min_lon, min_lat, max_lon, max_lat] to filter features.
@@ -108,6 +158,20 @@ export class WasmMap {
         } finally {
             wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
         }
+    }
+    /**
+     * Human-readable unit names for a layer, in index order, as a JS string array.
+     * @param {string | null} [layer]
+     * @returns {any}
+     */
+    unit_names(layer) {
+        var ptr0 = isLikeNone(layer) ? 0 : passStringToWasm0(layer, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len0 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmmap_unit_names(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
 }
 if (Symbol.dispose) WasmMap.prototype[Symbol.dispose] = WasmMap.prototype.free;
@@ -656,6 +720,10 @@ function __wbg_get_imports() {
             const ret = new Uint32Array(getArrayU32FromWasm0(arg0, arg1));
             return ret;
         },
+        __wbg_new_from_slice_fb7a0b380854939b: function(arg0, arg1) {
+            const ret = new Float64Array(getArrayF64FromWasm0(arg0, arg1));
+            return ret;
+        },
         __wbg_new_with_length_a90559ebda3954f8: function(arg0) {
             const ret = new Uint8Array(arg0 >>> 0);
             return ret;
@@ -840,6 +908,11 @@ function debugString(val) {
     }
     // TODO we could test for more things here, like `Set`s and `Map`s.
     return className;
+}
+
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
 }
 
 function getArrayU32FromWasm0(ptr, len) {
